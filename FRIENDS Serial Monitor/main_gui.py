@@ -498,7 +498,7 @@ class Application(ttk.Frame):
 
         df["Time_round"] = df['Time'].apply(round_to_nearest_second)
         df['Time_in_seconds'] = df['Time_round'].apply(convert_to_seconds)
-
+        self.btn_erase.config(state="normal")
         plot_type=self.cb_plot.get()
         if plot_type=="Stem":
             def generate_graph(df):
@@ -724,7 +724,7 @@ class Application(ttk.Frame):
             plt.show()
 
 
-        self.btn_erase.config(state="normal")
+        
 
     def send_text_btn_e(self):
         _send_data_e = "e"
