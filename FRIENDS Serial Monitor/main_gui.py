@@ -59,7 +59,6 @@ class Application(ttk.Frame):
             state="readonly",
             values=self.serialcom.find_comports(),
             width=69)
-        self.cb_com.current(0)
         self.cb_com.pack(expand=False, side="left")
 
         self.btn_reload = ttk.Button(
