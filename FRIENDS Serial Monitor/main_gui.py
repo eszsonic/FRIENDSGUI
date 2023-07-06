@@ -104,16 +104,26 @@ class Application(ttk.Frame):
 
         self.cb_plot = ttk.Combobox(
             master=lf_bps,
-            values=["Stem","Step","Line"],
+            values=["Line","Stem","Step"],
             width=25)
         self.cb_plot.current(0)
         self.cb_plot.pack(expand=False, side="left")
+
+        self.cb_plot_puff = ttk.Combobox(
+            master=lf_bps,
+            values=["Display all puffing events", "Display puffs that exceed the threshold"],
+            width=35)
+        self.cb_plot_puff.current(0)
+        self.cb_plot_puff.pack(expand=False, side="left")
 
         self.btn_puff = ttk.Button(
             master=lf_bps,
             text="send",
             command=self.open_puff)
         self.btn_puff.pack(expand=False, side="left")
+
+
+
     def _wedget_send(self):
         # String entry
         lf_send = ttk.LabelFrame(self.master, text="Input")
@@ -562,6 +572,8 @@ class Application(ttk.Frame):
                 for date in unique_dates:
                     print(date)
                     total_duration = 0
+                    dur_gth = 0
+                    number_of_puff = 0
                     # Get the rows with the current date
                     rows = df2[df2['Date'] == date]
 
@@ -578,6 +590,8 @@ class Application(ttk.Frame):
                             duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
                                 start_index = row["Time_in_seconds"]
                                 end_index = df2.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
@@ -590,18 +604,28 @@ class Application(ttk.Frame):
                             end_index = df2.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
 
-                    total_duration = f"{total_duration:.4f}"
+                    dur_gth = f"{dur_gth:.4f}"
                     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
 
-                    markerline, stemline, baseline = ax1.stem(np.arange(86400), time_matrix1, markerfmt=' ', basefmt=' ',
+                    option = self.cb_plot_puff.get()
+                    if option == "Display all puffing events":
+                        markerline, stemline, baseline = ax1.stem(np.arange(86400), time_matrix1, markerfmt=' ', basefmt=' ',
                                                               linefmt='g', label='PUFF> {}'.format(puff_duration+"s"))
-                    stemline.set_linewidth(10)
-                    # ax1.bar(np.arange(86400), time_matrix1, align='center', width=1, color='red', label='Puff')
-                    # ax1.plot(np.arange(86400), time_matrix1, linewidth=1, color='red', label='Puff')
-                    ax1.stem(np.arange(86400), time_matrix11, markerfmt=' ',basefmt=' ', linefmt='r', label='PUFF< {}'.format(puff_duration+"s"))
+                        stemline.set_linewidth(10)
+                        # ax1.bar(np.arange(86400), time_matrix1, align='center', width=1, color='red', label='Puff')
+                        # ax1.plot(np.arange(86400), time_matrix1, linewidth=1, color='red', label='Puff')
+                        ax1.stem(np.arange(86400), time_matrix11, markerfmt=' ',basefmt=' ', linefmt='r', label='PUFF< {}'.format(puff_duration+"s"))
+
+                    if option == "Display puffs that exceed the threshold":
+                        markerline, stemline, baseline = ax1.stem(np.arange(86400), time_matrix1, markerfmt=' ',
+                                                                  basefmt=' ',
+                                                                  linefmt='g',
+                                                                  label='PUFF> {}'.format(puff_duration + "s"))
+                        stemline.set_linewidth(10)
+
                     ax1.set_ylabel(date)
                     ax1.legend()
-                    ax1.set_title("Total puffing time: " + str(total_duration) + 's')
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
                     fig.set_size_inches(15, 3)
 
                     # ax2.bar(np.arange(86400), time_matrix2, align='center', width=1, color='blue', label='Touch')
@@ -639,6 +663,8 @@ class Application(ttk.Frame):
                 for date in unique_dates:
                     print(date)
                     total_duration = 0
+                    dur_gth=0
+                    number_of_puff=0
                     # Get the rows with the current date
                     rows = df2[df2['Date'] == date]
 
@@ -655,6 +681,8 @@ class Application(ttk.Frame):
                             duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
                                 start_index = row["Time_in_seconds"]
                                 end_index = df2.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
@@ -667,18 +695,24 @@ class Application(ttk.Frame):
                             end_index = df2.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
 
-                    total_duration = f"{total_duration:.4f}"
+                    dur_gth = f"{dur_gth:.4f}"
                     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    option = self.cb_plot_puff.get()
+                    if option == "Display all puffing events":
+                       ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.step(np.arange(86400), time_matrix11, where='post', color="red", label='PUFF< {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
+                       ax1.fill_between(np.arange(86400), time_matrix11, step="post", color='red', alpha=0.5)
 
-                    ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
-                    ax1.step(np.arange(86400), time_matrix11, where='post', color="red", label='PUFF< {}'.format(puff_duration + "s"))
-                    ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
-                    ax1.fill_between(np.arange(86400), time_matrix11, step="post", color='red', alpha=0.5)
+                    if option=="Display puffs that exceed the threshold":
+                        ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
+
                     ax1.set_ylim(0, 1.1)
-
                     ax1.set_xlabel("Time")
                     ax1.legend()
                     ax1.set_ylabel(date)
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
                     fig.set_size_inches(15, 3)
 
                     ax2.step(np.arange(86400), time_matrix2, where='post', label="TOUCH")
@@ -714,6 +748,8 @@ class Application(ttk.Frame):
                 for date in unique_dates:
                     print(date)
                     total_duration = 0
+                    dur_gth=0
+                    number_of_puff=0
                     # Get the rows with the current date
                     rows = df2[df2['Date'] == date]
 
@@ -730,6 +766,8 @@ class Application(ttk.Frame):
                             duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
                                 start_index = row["Time_in_seconds"]
                                 end_index = df2.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
@@ -742,17 +780,22 @@ class Application(ttk.Frame):
                             end_index = df2.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
 
-                    total_duration = f"{total_duration:.4f}"
+                    dur_gth = f"{dur_gth:.4f}"
                     fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-
-                    ax1.plot(np.arange(86400), time_matrix1, color="green", label='PUFF> {}'.format(puff_duration + "s"))
-                    ax1.plot(np.arange(86400), time_matrix11, color="red", label='PUFF< {}'.format(puff_duration + "s"))
-                    ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
-                    ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
+                    option = self.cb_plot_puff.get()
+                    if option=="Display all puffing events":
+                       ax1.plot(np.arange(86400), time_matrix1, color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.plot(np.arange(86400), time_matrix11, color="red", label='PUFF< {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                       ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
+                    if option=="Display puffs that exceed the threshold":
+                       ax1.plot(np.arange(86400), time_matrix1, color="green",label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
                     ax1.legend()
                     ax1.set_ylim(0, 1.1)
                     ax1.set_xlabel("Time")
                     ax1.set_ylabel(date)
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
 
                     fig.set_size_inches(15, 3)
 
@@ -809,7 +852,6 @@ if __name__ == "__main__":
     global t2
     root = tk.Tk()
     root.title("FRIENDS Serial Communication")
-
     Application(master=root)
 
     root.mainloop()
