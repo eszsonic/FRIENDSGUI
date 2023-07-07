@@ -6,6 +6,10 @@ from tkinter.ttk import *
 import threading
 import math
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import AutoLocator, NullFormatter
+
 import numpy as np
 
 from serialcompy import SerialCom
@@ -150,12 +154,12 @@ class Application(ttk.Frame):
             state="disable")
         self.btn_erase.pack(expand=False, side="left")
 
-        self.btn_send = ttk.Button(
+        self.btn_sdc = ttk.Button(
             master=lf_send,
             text="Start Data Collection",
             command=self.send_text_btn_sdc,
-            state="enable")
-        self.btn_send.pack(expand=False, side="left")
+            state="disable")
+        self.btn_sdc.pack(expand=False, side="left")
 
         self.btn_read = ttk.Button(
             master=lf_send,
@@ -301,6 +305,7 @@ class Application(ttk.Frame):
         self.en_send.delete(0, tk.END)
 
     def send_text_btn_sdc(self):
+        self.lb_rx.delete(0, 'end')
         current_time = DT.datetime.now()
         unix_timestamp = (DT.datetime.timestamp(current_time))
         frac, whole = math.modf(unix_timestamp)
@@ -373,6 +378,7 @@ class Application(ttk.Frame):
         
         self.btn_erase.config(state="normal")
         self.btn_read.config(state="disabled")
+        self.btn_sdc.config(state="normal")
 
 
     def send_text_btn_conv(self):
@@ -558,7 +564,7 @@ class Application(ttk.Frame):
             def generate_graph(df2):
 
                 unique_dates = df2['Date'].unique()
-
+                """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
                            57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
@@ -567,6 +573,18 @@ class Application(ttk.Frame):
                             "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
                             "21:00",
                             "22:00", "23:00", "24:00"]
+                """
+                x_ticks = [0, 1800, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 23400,
+                           25200, 27000, 28800, 30600, 32400, 34200,
+                           36000, 37800, 39600, 41400, 43200, 45000, 46800, 48600, 50400, 52200, 54000, 55800, 57600,
+                           59400, 61200, 63000, 64800, 66600, 68400, 70200, 72000, 73800, 75600, 77400, 79200, 81000,
+                           82800, 84600, 86400, 86460]
+                x_labels = ["00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30", "04:00", "04:30",
+                            "05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
+                            "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+                            "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
+                            "20:00", "20:30",
+                            "21:00", "21:30", "22:00", "22:30", "23:00", "23:30", "24:00", "24:01"]
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
@@ -626,12 +644,30 @@ class Application(ttk.Frame):
                     ax1.set_ylabel(date)
                     ax1.legend()
                     ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
-                    fig.set_size_inches(15, 3)
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
 
-                    # ax2.bar(np.arange(86400), time_matrix2, align='center', width=1, color='blue', label='Touch')
-                    # ax2.plot(np.arange(86400), time_matrix2, linewidth=1, color='blue', label='Touch')
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    # plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+                    fig.set_size_inches(17, 3)
+
+
                     ax2.stem(np.arange(86400), time_matrix2, markerfmt=' ',basefmt=' ', linefmt='b', label="TOUCH")
-                    ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
+                    #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
                     ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
                     ax2.legend()
@@ -649,7 +685,7 @@ class Application(ttk.Frame):
             def generate_graph(df2):
 
                 unique_dates = df2['Date'].unique()
-
+                """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
                            57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
@@ -658,6 +694,18 @@ class Application(ttk.Frame):
                             "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
                             "21:00",
                             "22:00", "23:00", "24:00"]
+                """
+                x_ticks = [0, 1800, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 23400,
+                           25200, 27000, 28800, 30600, 32400, 34200,
+                           36000, 37800, 39600, 41400, 43200, 45000, 46800, 48600, 50400, 52200, 54000, 55800, 57600,
+                           59400, 61200, 63000, 64800, 66600, 68400, 70200, 72000, 73800, 75600, 77400, 79200, 81000,
+                           82800, 84600, 86400, 86460]
+                x_labels = ["00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30", "04:00", "04:30",
+                            "05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
+                            "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+                            "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
+                            "20:00", "20:30",
+                            "21:00", "21:30", "22:00", "22:30", "23:00", "23:30", "24:00", "24:01"]
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
@@ -713,13 +761,33 @@ class Application(ttk.Frame):
                     ax1.legend()
                     ax1.set_ylabel(date)
                     ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
-                    fig.set_size_inches(15, 3)
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
+
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    # plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+                    fig.set_size_inches(17, 3)
+
 
                     ax2.step(np.arange(86400), time_matrix2, where='post', label="TOUCH")
                     ax2.fill_between(np.arange(86400), time_matrix2, step="post", color='blue', alpha=0.5)
                     ax2.set_ylim(0, 1.1)
 
-                    ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
+                    #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
                     ax2.legend()
                     ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
@@ -734,7 +802,7 @@ class Application(ttk.Frame):
             def generate_graph(df2):
 
                 unique_dates = df2['Date'].unique()
-
+                """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
                            57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
@@ -743,6 +811,14 @@ class Application(ttk.Frame):
                             "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
                             "21:00",
                             "22:00", "23:00", "24:00"]
+                """
+
+                x_ticks = [0,1800, 3600,5400,7200,9000,10800,12600,14400,16200,18000,19800,21600,23400,25200,27000,28800,30600,32400,34200,
+                           36000,37800,39600,41400,43200,45000,46800,48600,50400,52200,54000,55800,57600,59400,61200,63000,64800,66600,68400,70200,72000,73800,75600,77400,79200,81000,82800,84600,86400,86460]
+                x_labels = ["00:00","00:30", "01:00","01:30", "02:00","02:30","03:00","03:30","04:00","04:30", "05:00","05:30", "06:00", "06:30","07:00","07:30", "08:00","08:30","09:00","09:30",
+                            "10:00","10:30","11:00","11:30", "12:00","12:30","13:00", "13:30", "14:00","14:30", "15:00","15:30", "16:00","16:30" ,"17:00","17:30", "18:00","18:30", "19:00","19:30", "20:00","20:30",
+                            "21:00","21:30","22:00","22:30", "23:00","23:30","24:00","24:01"]
+
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
@@ -796,13 +872,33 @@ class Application(ttk.Frame):
                     ax1.set_xlabel("Time")
                     ax1.set_ylabel(date)
                     ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
 
-                    fig.set_size_inches(15, 3)
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    #plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+
+                    fig.set_size_inches(17, 3)
+
 
                     ax2.plot(np.arange(86400), time_matrix2, color="blue", label="TOUCH")
                     ax2.fill_between(np.arange(86400), time_matrix2, color='blue', alpha=0.5)
                     ax2.set_ylim(0, 1.1)
-                    ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
+
                     ax2.legend()
                     ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
