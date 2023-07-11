@@ -133,18 +133,18 @@ class Application(ttk.Frame):
         lf_send = ttk.LabelFrame(self.master, text="Input")
         lf_send.pack(expand=False, side="top")
 
-        self.btn_send = ttk.Button(
+        self.btn_time = ttk.Button(
             master=lf_send,
             text="Read Time",
             command=self.send_text_btn_t,
-            state="enable")
-        self.btn_send.pack(expand=False, side="left")
+            state="disable")
+        self.btn_time.pack(expand=False, side="left")
 
         self.btn_send = ttk.Button(
             master=lf_send,
             text="Set time",
             command=self.send_text_btn_s,
-            state="enable")
+            state="disable")
         self.btn_send.pack(expand=False, side="left")
 
         self.btn_erase = ttk.Button(
@@ -168,12 +168,12 @@ class Application(ttk.Frame):
             state="disable")
         self.btn_read.pack(expand=False, side="left")
 
-        self.btn_send = ttk.Button(
+        self.btn_cgp = ttk.Button(
             master=lf_send,
             text="Conversion & Generate Plots",
             command=self.send_text_btn_conv,
             state="enable")
-        self.btn_send.pack(expand=False, side="left")
+        self.btn_cgp.pack(expand=False, side="left")
 
         self.btn_yes = ttk.Button(
             master=lf_send,
@@ -230,6 +230,8 @@ class Application(ttk.Frame):
             self.la_status.config(text="Connected", background="lightgreen")
             # self.en_send.config(state="normal")
             self.btn_send.config(state="normal")
+            self.btn_read.config(state="normal")
+            self.btn_time.config(state="normal")
             self.btn_close.config(state="normal")
 
             self.lb_rx.config(state="normal")
@@ -260,19 +262,28 @@ class Application(ttk.Frame):
                     print("Comport disconnected while reading")
         """ 
     def _serial_read(self):
+        """
+        if self.serialcom.serial.in_waiting:
+            received_data = self.serialcom.serial.read(self.serialcom.serial.in_waiting).decode()  # Read the received data from the serial connection
+            if received_data != b'':
+               self.lb_rx.insert(tk.END, received_data)
+
+        root.after(100, self._serial_read)
+        """
+
         buffer = b''
         while self.serialcom.serial.is_open:
             _recv_data = self.serialcom.serial.readline()
             if _recv_data != b'':
                 buffer += _recv_data
-                while b'\n' in buffer:
-                    line, buffer = buffer.split(b'\n', 1)
+                while b'\r\n' in buffer:
+                    line, buffer = buffer.split(b'\r\n', 1)
                     try:
-                        self.lb_rx.insert(tk.END, _recv_data.strip().decode("utf-8"))
+                        self.lb_rx.insert(tk.END, line.strip().decode("utf-8"))
                         # _recv_data = self.serialcom.serial_read()
                     except (TypeError, AttributeError):
                         print("Comport disconnected while reading")
-            
+
    
     def open_puff(self):
         puff_duration=0
@@ -290,6 +301,9 @@ class Application(ttk.Frame):
         self.btn_send.config(state="disable")
         self.btn_close.config(state="disable")
         self.btn_erase.config(state="disable")
+        self.btn_time.config(state="disable")
+        self.btn_sdc.config(state="disable")
+        self.btn_read.config(state="disable")
         self.btn_yes.config(state="disable")
         self.lb_rx.config(state="disable")
         self.btn_rxexp.config(state="disable")
@@ -326,6 +340,8 @@ class Application(ttk.Frame):
 
         self.btn_read.config(state="disabled")
 
+
+
     def send_text_btn_r(self):
 
         #self.lb_rx.delete(0, 'end')
@@ -333,11 +349,16 @@ class Application(ttk.Frame):
 
         current_time = DT.datetime.now()
 
+
         _send_data_r = "r"
-        self.serialcom.serial.write(_send_data_r.encode("utf-8"))
+        self.serialcom.serial.write(_send_data_r.encode())
+
 
         _send_data_t = "t"
-        self.serialcom.serial.write(_send_data_t.encode("utf-8"))
+        self.serialcom.serial.write(_send_data_t.encode())
+
+        #time.sleep(4)
+
 
         # self.lb_tx.insert(tk.END, _send_data_r)
 
@@ -379,6 +400,7 @@ class Application(ttk.Frame):
         self.btn_erase.config(state="normal")
         self.btn_read.config(state="disabled")
         self.btn_sdc.config(state="normal")
+
 
 
     def send_text_btn_conv(self):
