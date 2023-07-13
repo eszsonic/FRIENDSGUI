@@ -39,6 +39,7 @@ class Application(ttk.Frame):
         self._wedget_puff()
         self._wedget_send()
         self._wedget_txrx()
+        self._widget_read()
 
 
     def _wedget_statusbar(self):
@@ -52,6 +53,18 @@ class Application(ttk.Frame):
             text="No Connection",
             background="lightgray")
         self.la_status.pack(expand=False, side="left")
+
+    def _widget_read(self):
+        # StatusBar
+        lf_read = ttk.LabelFrame(self.master, text="Read Data Status Bar")
+        lf_read.pack(expand=False, side="top")
+
+        self.read_status = ttk.Label(
+            master=lf_read,
+            width=90,
+            text="Ready",
+            background="lightgray")
+        self.read_status.pack(expand=False, side="left")
 
     def _wedget_com(self):
         # COM list pulldown, Reload button
@@ -311,6 +324,7 @@ class Application(ttk.Frame):
     def clear_text(self):
         self.lb_rx.delete(0, 'end')
         self.btn_read.config(state="normal")
+        self.read_status.config(text="Ready", background="lightgray")
 
     def send_text_btn(self):
         _send_data = self.en_send.get()
@@ -343,8 +357,8 @@ class Application(ttk.Frame):
 
 
     def send_text_btn_r(self):
-
-        #self.lb_rx.delete(0, 'end')
+        self.read_status.config(text="Reading Data from the Device", background="lightgreen")
+        self.lb_rx.delete(0, 'end')
         #time.sleep(0.3)
 
         current_time = DT.datetime.now()
@@ -362,6 +376,7 @@ class Application(ttk.Frame):
 
         # self.lb_tx.insert(tk.END, _send_data_r)
 
+        self.read_status.config(text="Save Data and Generating plots", background="lightgreen")
         _fname = filedialog.asksaveasfilename(
             initialdir="/",
             title="Save as",
@@ -369,7 +384,6 @@ class Application(ttk.Frame):
 
         if _fname:
             _fname += ".txt"
-
 
 
         with open(_fname, 'w') as f1:
@@ -396,22 +410,14 @@ class Application(ttk.Frame):
                     # f.write(str(self.lb_rx.get(i)) + "\n")
             f1.write(str(tm2) + "\n")
             f1.write(df2.to_string(index=False) + "\n")
-        
+
+
         self.btn_erase.config(state="normal")
         self.btn_read.config(state="disabled")
         self.btn_sdc.config(state="normal")
 
 
 
-    def send_text_btn_conv(self):
-
-        self.lb_rx.delete(0, 'end')
-        time.sleep(0.3)
-
-        #_send_data_t = "t"
-        #self.serialcom.serial.write(_send_data_t.encode("utf-8"))
-        
-        
         def add_comma_if_words(string):
             words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME"]
             for word in words_to_replace:
@@ -475,10 +481,491 @@ class Application(ttk.Frame):
             seconds = int(time_parts[2])
             total_seconds = hours * 3600 + minutes * 60 + seconds
             return total_seconds
-        
-        
-        
+
+        def datetime_from_utc_to_local(utc_datetime):
+            now_timestamp = time.time()
+            offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
+            return utc_datetime + offset
+
+
+        df2_new = pd.DataFrame(columns=["Timestamps:"])
+        for index, row in df2.iterrows():
+            line2= str(row)
+            line2=line2[15:31]
+            timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
+
+            for hexstamp in timestamp_hex.split():
+                gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
+                    # Event separation
+            if (line2[0] == "1"):
+                event = "PUFF_ON" + " " + str(local_time)
+            elif (line2[0] == "2"):
+                event = "PUFF_OFF" + " " + str(local_time)
+            elif (line2[0] == "3"):
+                event = "TOUCH_ON" + " " + str(local_time)
+            elif (line2[0] == "4"):
+                event = "TOUCH_OFF" + " " + str(local_time)
+            elif (line2[0] == "5"):
+                event = "TEMPERATURE_ON" + " " + str(local_time)
+            elif (line2[0] == "6"):
+                event = "TEMPERATURE_OFF" + " " + str(local_time)
+            elif (line2[0] == "E"):
+                event = "READ_TIME" + " " + str(local_time)
+            elif (line2[0] == "F"):
+                event = "SET_TIME" + " " + str(local_time)
+            else:
+                event = "Time"
+                print("issue")
+
+            df2_new.loc[len(df2_new)] = [event]
+
+        df2_new["Timestamps:"] = df2_new["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+        df2_new[["Event", "Time"]] = df2_new["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+        df2_new.drop("Timestamps:", axis=1, inplace=True)
+        df2_new["Time"] = df2_new['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True)
+        df2_new[["Date", "Time"]] = df2_new["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
+        format_time_column(df2_new, "Time")
+        df2_new["Time_subseconds"] = df2_new['Time'].apply(time_to_seconds_subseconds)
+
+        df2_new["Time_round"] = df2_new['Time'].apply(round_to_nearest_second)
+        df2_new['Time_in_seconds'] = df2_new['Time_round'].apply(convert_to_seconds)
+        df2=df2_new.copy()
+
+        plot_type = self.cb_plot.get()
+
+        if plot_type=="Stem":
+            def generate_graph(df2):
+
+                unique_dates = df2['Date'].unique()
+                """
+                x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
+                           50400, 54000,
+                           57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
+                x_labels = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00",
+                            "10:00",
+                            "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
+                            "21:00",
+                            "22:00", "23:00", "24:00"]
+                """
+                x_ticks = [0, 1800, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 23400,
+                           25200, 27000, 28800, 30600, 32400, 34200,
+                           36000, 37800, 39600, 41400, 43200, 45000, 46800, 48600, 50400, 52200, 54000, 55800, 57600,
+                           59400, 61200, 63000, 64800, 66600, 68400, 70200, 72000, 73800, 75600, 77400, 79200, 81000,
+                           82800, 84600, 86400, 86460]
+                x_labels = ["00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30", "04:00", "04:30",
+                            "05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
+                            "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+                            "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
+                            "20:00", "20:30",
+                            "21:00", "21:30", "22:00", "22:30", "23:00", "23:30", "24:00", "24:01"]
+                puff_duration = 0
+                puff_duration = self.en_puff.get()
+                for date in unique_dates:
+                    print(date)
+                    total_duration = 0
+                    dur_gth = 0
+                    number_of_puff = 0
+                    # Get the rows with the current date
+                    rows = df2[df2['Date'] == date]
+
+                    time_matrix1 = np.zeros((86400,), dtype=int)
+                    time_matrix11 = np.zeros((86400,), dtype=int)
+                    time_matrix2 = np.zeros((86400,), dtype=int)
+
+                    string1 = 'PUFF_ON'
+                    string2 = 'PUFF_OFF'
+                    string3 = 'TOUCH_ON'
+                    string4 = 'TOUCH_OFF'
+                    for index, row in rows.iterrows():
+                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
+                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                            total_duration += duration
+                            if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
+                                start_index = row["Time_in_seconds"]
+                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix1[start_index:end_index + 1] = 1
+                            else:
+                                start_index11 = row["Time_in_seconds"]
+                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix11[start_index11:end_index11 + 1] = 1
+                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                            start_index = row["Time_in_seconds"]
+                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            time_matrix2[start_index:end_index + 1] = 1
+
+                    dur_gth = f"{dur_gth:.4f}"
+                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+
+                    option = self.cb_plot_puff.get()
+                    if option == "Display all puffing events":
+                        markerline, stemline, baseline = ax1.stem(np.arange(86400), time_matrix1, markerfmt=' ', basefmt=' ',
+                                                              linefmt='g', label='PUFF> {}'.format(puff_duration+"s"))
+                        stemline.set_linewidth(10)
+                        # ax1.bar(np.arange(86400), time_matrix1, align='center', width=1, color='red', label='Puff')
+                        # ax1.plot(np.arange(86400), time_matrix1, linewidth=1, color='red', label='Puff')
+                        ax1.stem(np.arange(86400), time_matrix11, markerfmt=' ',basefmt=' ', linefmt='r', label='PUFF< {}'.format(puff_duration+"s"))
+
+                    if option == "Display puffs that exceed the threshold":
+                        markerline, stemline, baseline = ax1.stem(np.arange(86400), time_matrix1, markerfmt=' ',
+                                                                  basefmt=' ',
+                                                                  linefmt='g',
+                                                                  label='PUFF> {}'.format(puff_duration + "s"))
+                        stemline.set_linewidth(10)
+
+                    ax1.set_ylabel(date)
+                    ax1.legend()
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
+
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    # plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+                    fig.set_size_inches(17, 3)
+
+
+                    ax2.stem(np.arange(86400), time_matrix2, markerfmt=' ',basefmt=' ', linefmt='b', label="TOUCH")
+                    #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
+                    ax2.set_ylabel(date)
+                    ax2.set_xlabel("Time")
+                    ax2.legend()
+                    plt.tight_layout()
+                    # plt.show()
+
+
+                return ax1, ax2
+
+            ax1, ax2 = generate_graph(df2=df2)
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
+            plt.show()
+
+        if plot_type == "Step":
+            def generate_graph(df2):
+
+                unique_dates = df2['Date'].unique()
+                """
+                x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
+                           50400, 54000,
+                           57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
+                x_labels = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00",
+                            "10:00",
+                            "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
+                            "21:00",
+                            "22:00", "23:00", "24:00"]
+                """
+                x_ticks = [0, 1800, 3600, 5400, 7200, 9000, 10800, 12600, 14400, 16200, 18000, 19800, 21600, 23400,
+                           25200, 27000, 28800, 30600, 32400, 34200,
+                           36000, 37800, 39600, 41400, 43200, 45000, 46800, 48600, 50400, 52200, 54000, 55800, 57600,
+                           59400, 61200, 63000, 64800, 66600, 68400, 70200, 72000, 73800, 75600, 77400, 79200, 81000,
+                           82800, 84600, 86400, 86460]
+                x_labels = ["00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30", "04:00", "04:30",
+                            "05:00", "05:30", "06:00", "06:30", "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
+                            "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+                            "15:00", "15:30", "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30",
+                            "20:00", "20:30",
+                            "21:00", "21:30", "22:00", "22:30", "23:00", "23:30", "24:00", "24:01"]
+                puff_duration = 0
+                puff_duration = self.en_puff.get()
+                for date in unique_dates:
+                    print(date)
+                    total_duration = 0
+                    dur_gth=0
+                    number_of_puff=0
+                    # Get the rows with the current date
+                    rows = df2[df2['Date'] == date]
+
+                    time_matrix1 = np.zeros((86400,), dtype=int)
+                    time_matrix11 = np.zeros((86400,), dtype=int)
+                    time_matrix2 = np.zeros((86400,), dtype=int)
+
+                    string1 = 'PUFF_ON'
+                    string2 = 'PUFF_OFF'
+                    string3 = 'TOUCH_ON'
+                    string4 = 'TOUCH_OFF'
+                    for index, row in rows.iterrows():
+                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
+                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                            total_duration += duration
+                            if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
+                                start_index = row["Time_in_seconds"]
+                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix1[start_index:end_index + 1] = 1
+                            else:
+                                start_index11 = row["Time_in_seconds"]
+                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix11[start_index11:end_index11 + 1] = 1
+                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                            start_index = row["Time_in_seconds"]
+                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            time_matrix2[start_index:end_index + 1] = 1
+
+                    dur_gth = f"{dur_gth:.4f}"
+                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    option = self.cb_plot_puff.get()
+                    if option == "Display all puffing events":
+                       ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.step(np.arange(86400), time_matrix11, where='post', color="red", label='PUFF< {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
+                       ax1.fill_between(np.arange(86400), time_matrix11, step="post", color='red', alpha=0.5)
+
+                    if option=="Display puffs that exceed the threshold":
+                        ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
+
+                    ax1.set_ylim(0, 1.1)
+                    ax1.set_xlabel("Time")
+                    ax1.legend()
+                    ax1.set_ylabel(date)
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
+
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    # plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+                    fig.set_size_inches(17, 3)
+
+
+                    ax2.step(np.arange(86400), time_matrix2, where='post', label="TOUCH")
+                    ax2.fill_between(np.arange(86400), time_matrix2, step="post", color='blue', alpha=0.5)
+                    ax2.set_ylim(0, 1.1)
+
+                    #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
+                    ax2.legend()
+                    ax2.set_ylabel(date)
+                    ax2.set_xlabel("Time")
+                    plt.tight_layout()
+
+                return ax1, ax2
+            ax1, ax2 = generate_graph(df2=df2)
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
+            plt.show()
+
+        if plot_type == "Line":
+            def generate_graph(df2):
+
+                unique_dates = df2['Date'].unique()
+                """
+                x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
+                           50400, 54000,
+                           57600, 61200, 64800, 68400, 72000, 75600, 79200, 82800, 86400]
+                x_labels = ["00:00", "01:00", "02:00", "03:00", "04:00", "05:00", "06:00", "07:00", "08:00", "09:00",
+                            "10:00",
+                            "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00",
+                            "21:00",
+                            "22:00", "23:00", "24:00"]
+                """
+
+                x_ticks = [0,1800, 3600,5400,7200,9000,10800,12600,14400,16200,18000,19800,21600,23400,25200,27000,28800,30600,32400,34200,
+                           36000,37800,39600,41400,43200,45000,46800,48600,50400,52200,54000,55800,57600,59400,61200,63000,64800,66600,68400,70200,72000,73800,75600,77400,79200,81000,82800,84600,86400,86460]
+                x_labels = ["00:00","00:30", "01:00","01:30", "02:00","02:30","03:00","03:30","04:00","04:30", "05:00","05:30", "06:00", "06:30","07:00","07:30", "08:00","08:30","09:00","09:30",
+                            "10:00","10:30","11:00","11:30", "12:00","12:30","13:00", "13:30", "14:00","14:30", "15:00","15:30", "16:00","16:30" ,"17:00","17:30", "18:00","18:30", "19:00","19:30", "20:00","20:30",
+                            "21:00","21:30","22:00","22:30", "23:00","23:30","24:00","24:01"]
+
+                puff_duration = 0
+                puff_duration = self.en_puff.get()
+                for date in unique_dates:
+                    print(date)
+                    total_duration = 0
+                    dur_gth=0
+                    number_of_puff=0
+                    # Get the rows with the current date
+                    rows = df2[df2['Date'] == date]
+
+                    time_matrix1 = np.zeros((86400,), dtype=int)
+                    time_matrix11 = np.zeros((86400,), dtype=int)
+                    time_matrix2 = np.zeros((86400,), dtype=int)
+
+                    string1 = 'PUFF_ON'
+                    string2 = 'PUFF_OFF'
+                    string3 = 'TOUCH_ON'
+                    string4 = 'TOUCH_OFF'
+                    for index, row in rows.iterrows():
+                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
+                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                            total_duration += duration
+                            if float(duration) >= float(puff_duration):
+                                dur_gth += duration
+                                number_of_puff+=1
+                                start_index = row["Time_in_seconds"]
+                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix1[start_index:end_index + 1] = 1
+                            else:
+                                start_index11 = row["Time_in_seconds"]
+                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                time_matrix11[start_index11:end_index11 + 1] = 1
+                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                            start_index = row["Time_in_seconds"]
+                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            time_matrix2[start_index:end_index + 1] = 1
+
+                    dur_gth = f"{dur_gth:.4f}"
+                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    option = self.cb_plot_puff.get()
+                    if option=="Display all puffing events":
+                       ax1.plot(np.arange(86400), time_matrix1, color="green", label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.plot(np.arange(86400), time_matrix11, color="red", label='PUFF< {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                       ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
+                    if option=="Display puffs that exceed the threshold":
+                       ax1.plot(np.arange(86400), time_matrix1, color="green",label='PUFF> {}'.format(puff_duration + "s"))
+                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                    ax1.legend()
+                    ax1.set_ylim(0, 1.1)
+                    ax1.set_xlabel("Time")
+                    ax1.set_ylabel(date)
+                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    ax2.set_xticks(x_ticks)
+                    ax2.set_xticklabels(x_labels)
+
+                    minor_ticks = []
+                    minor_labels = []
+                    for i in range(len(x_ticks) - 1):
+                        start_tick = x_ticks[i]
+                        end_tick = x_ticks[i + 1]
+                        for tick in range(start_tick, end_tick, 300):
+                            minor_ticks.append(tick)
+                            minutes = tick // 60
+                            hours = minutes // 60
+                            minutes %= 60
+                            minor_labels.append(f"{hours:02d}:{minutes:02d}")
+                    plt.xticks(x_ticks, x_labels)
+                    #plt.minorticks_on()
+                    plt.xticks(minor_ticks, rotation=90)
+                    plt.tick_params(axis='x', which="both", width=1, length=4)
+
+
+                    fig.set_size_inches(17, 3)
+
+
+                    ax2.plot(np.arange(86400), time_matrix2, color="blue", label="TOUCH")
+                    ax2.fill_between(np.arange(86400), time_matrix2, color='blue', alpha=0.5)
+                    ax2.set_ylim(0, 1.1)
+
+                    ax2.legend()
+                    ax2.set_ylabel(date)
+                    ax2.set_xlabel("Time")
+                    plt.tight_layout()
+
+                return ax1, ax2
+            ax1, ax2 = generate_graph(df2=df2)
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
+            plt.show()
+
+        self.read_status.config(text="Ready", background="lightgray")
+
+
+
+
+    def send_text_btn_conv(self):
+
+        self.lb_rx.delete(0, 'end')
+        time.sleep(0.3)
+
+        #_send_data_t = "t"
+        #self.serialcom.serial.write(_send_data_t.encode("utf-8"))
+
+
+        def add_comma_if_words(string):
+            words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME"]
+            for word in words_to_replace:
+                string = string.replace(word, f"{word},")
+            return string
+
+        def format_time_column(df, column_name):
+            # Convert the column to string
+            df[column_name] = df[column_name].astype(str)
+
+            # Split the column into hours, minutes, seconds, and milliseconds
+            time_parts = df[column_name].str.split(':', expand=True)
+            hours = time_parts[0].astype(int)
+            minutes = time_parts[1].astype(int)
+            seconds = time_parts[2].astype(float).round(10).astype(str)
+
+            # Format the seconds column
+            seconds = seconds.apply(lambda s: s if '.' in s else s + '.00')
+
+            # Combine the formatted parts into a new column
+            df[column_name] = hours.map("{:02d}".format) + ':' + \
+                              minutes.map("{:02d}".format) + ':' + \
+                              seconds
+            return df
+
+        def time_to_seconds_subseconds(time_str):
+            # Convert the time string to a datetime object
+            time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+
+            # Extract the hours, minutes, seconds, and microseconds
+            hours = time_obj.hour
+            minutes = time_obj.minute
+            seconds = time_obj.second
+            microseconds = time_obj.microsecond
+
+            # Calculate the total seconds including subseconds
+            total_seconds = (hours * 3600) + (minutes * 60) + seconds + (microseconds / 1e6)
+
+            return total_seconds
+
+        def round_to_nearest_second(time_str):
+            # Parse the input time string to a datetime object
+            time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+
+            # Calculate the microsecond fraction and the rounded microsecond value
+            microsecond_fraction = time_obj.microsecond / 1000000.0
+            rounded_microsecond = round(microsecond_fraction)
+
+            # Add the rounded microsecond value to the original time
+            rounded_time = time_obj + timedelta(microseconds=rounded_microsecond * 1000000)
+
+            # Format the rounded time as a string
+            rounded_time_str = rounded_time.strftime("%H:%M:%S")
+
+            return rounded_time_str
+
+        def convert_to_seconds(time_string):
+            time_parts = time_string.split(':')
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1])
+            seconds = int(time_parts[2])
+            total_seconds = hours * 3600 + minutes * 60 + seconds
+            return total_seconds
+
+        self.read_status.config(text="Converting timestamps", background="lightgreen")
         file_path = filedialog.askopenfilename(filetypes=[('Text Files', '*.txt')])
+
+
+
         df = pd.read_csv(file_path)
         df2 = pd.DataFrame(columns=["Timestamps:"])
 
@@ -557,14 +1044,18 @@ class Application(ttk.Frame):
 
         df_v2 = df_v2.iloc[1:].reset_index(drop=True)
     
-        self.lb_rx.insert(tk.END, "Conversion is Done. After saving the converted files, plot generation will be started")
+
+        self.read_status.config(text="Save timestamps and generating plots", background="lightgreen")
         _fname = filedialog.asksaveasfilename(
             initialdir="/",
             title="Save as",
             filetypes=[("text file", "*.txt"), ("all files", "*.*")])
+
         if _fname:
             _fname = file_path.split(".")[0]+"_converted.txt"
             file_name3=file_path.split(".")[0]+"_duration.txt"
+
+
         current_time = DT.datetime.now()
         
         with open(_fname, 'w') as f2:
@@ -581,6 +1072,9 @@ class Application(ttk.Frame):
         
         df2["Time_round"] = df2['Time'].apply(round_to_nearest_second)
         df2['Time_in_seconds'] = df2['Time_round'].apply(convert_to_seconds)
+
+
+
         plot_type=self.cb_plot.get()
         if plot_type=="Stem":
             def generate_graph(df2):
@@ -700,7 +1194,7 @@ class Application(ttk.Frame):
                 return ax1, ax2
 
             ax1, ax2 = generate_graph(df2=df2)
-            self.lb_rx.insert(tk.END, "Plot generation Done")
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Step":
@@ -817,7 +1311,7 @@ class Application(ttk.Frame):
 
                 return ax1, ax2
             ax1, ax2 = generate_graph(df2=df2)
-            self.lb_rx.insert(tk.END, "Plot generation Done")
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Line":
@@ -928,11 +1422,11 @@ class Application(ttk.Frame):
 
                 return ax1, ax2
             ax1, ax2 = generate_graph(df2=df2)
-            self.lb_rx.insert(tk.END, "Plot generation Done")
+            self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         self.btn_read.config(state="disabled")
-
+        self.read_status.config(text="Ready", background="lightgray")
     def send_text_btn_e(self):
         _send_data_e = "e"
         self.serialcom.serial.write(_send_data_e.encode("utf-8"))
