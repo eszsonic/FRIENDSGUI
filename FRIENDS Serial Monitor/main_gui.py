@@ -56,7 +56,7 @@ class Application(ttk.Frame):
 
     def _widget_read(self):
         # StatusBar
-        lf_read = ttk.LabelFrame(self.master, text="Read Data Status Bar")
+        lf_read = ttk.LabelFrame(self.master, text="Data Status Bar")
         lf_read.pack(expand=False, side="top")
 
         self.read_status = ttk.Label(
