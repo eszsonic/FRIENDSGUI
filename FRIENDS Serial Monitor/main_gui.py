@@ -24,7 +24,9 @@ from tkinter import filedialog, Tk
 import pandas as pd
 
 
+
 class Application(ttk.Frame):
+    time_duration = 0
     def __init__(self, master=None):
         super().__init__(master=master)
         self.master = master
@@ -183,7 +185,7 @@ class Application(ttk.Frame):
 
         self.btn_cgp = ttk.Button(
             master=lf_send,
-            text="Conversion & Generate Plots",
+            text="File Conversion",
             command=self.send_text_btn_conv,
             state="enable")
         self.btn_cgp.pack(expand=False, side="left")
@@ -214,6 +216,13 @@ class Application(ttk.Frame):
             width=110,
             state="normal")
         self.lb_rx.pack(expand=False)
+
+        self.btn_save = ttk.Button(
+            lf_rx,
+            text="Save data and generate plots",
+            command=self.save_data,
+            state="disable")
+        self.btn_save.pack(expand=False, side="right")
 
         self.btn_rxexp = ttk.Button(
             lf_rx,
@@ -285,19 +294,25 @@ class Application(ttk.Frame):
         """
 
         buffer = b''
+        num=0
         while self.serialcom.serial.is_open:
             _recv_data = self.serialcom.serial.readline()
             if _recv_data != b'':
                 buffer += _recv_data
                 while b'\r\n' in buffer:
+                    self.read_status.config(text="Reading Data from device. Please wait ......", background="orange")
+                    num=1
                     line, buffer = buffer.split(b'\r\n', 1)
                     try:
                         self.lb_rx.insert(tk.END, line.strip().decode("utf-8"))
                         # _recv_data = self.serialcom.serial_read()
                     except (TypeError, AttributeError):
                         print("Comport disconnected while reading")
+            if num==1 and _recv_data == b'':
+               self.read_status.config(text="Reading Data Done", background="lightgreen")
+               num=0
 
-   
+
     def open_puff(self):
         puff_duration=0
         puff_duration=self.en_puff.get()
@@ -357,26 +372,25 @@ class Application(ttk.Frame):
 
 
     def send_text_btn_r(self):
-        self.read_status.config(text="Reading Data from the Device", background="lightgreen")
-        self.lb_rx.delete(0, 'end')
+        self.read_status.config(text="Reading Data from the Device. Please wait .....", background="lightgreen")
+        #self.lb_rx.delete(0, 'end')
         #time.sleep(0.3)
 
-        current_time = DT.datetime.now()
-
-
-        _send_data_r = "r"
-        self.serialcom.serial.write(_send_data_r.encode())
 
 
         _send_data_t = "t"
         self.serialcom.serial.write(_send_data_t.encode())
 
-        #time.sleep(4)
-
+        _send_data_r = "r"
+        self.serialcom.serial.write(_send_data_r.encode())
 
         # self.lb_tx.insert(tk.END, _send_data_r)
+        self.btn_save.config(state="normal")
 
-        self.read_status.config(text="Save Data and Generating plots", background="lightgreen")
+
+    def save_data(self):
+        self.read_status.config(text="Save Data and Generating plots", background="orange")
+        current_time = DT.datetime.now()
         _fname = filedialog.asksaveasfilename(
             initialdir="/",
             title="Save as",
@@ -384,6 +398,8 @@ class Application(ttk.Frame):
 
         if _fname:
             _fname += ".txt"
+            file_name2 = _fname.split(".")[0] + "_converted.txt"
+            file_name3 = _fname.split(".")[0] + "_duration.txt"
 
 
         with open(_fname, 'w') as f1:
@@ -415,6 +431,7 @@ class Application(ttk.Frame):
         self.btn_erase.config(state="normal")
         self.btn_read.config(state="disabled")
         self.btn_sdc.config(state="normal")
+        self.btn_save.config(state="disabled")
 
 
 
@@ -482,51 +499,90 @@ class Application(ttk.Frame):
             total_seconds = hours * 3600 + minutes * 60 + seconds
             return total_seconds
 
-        def datetime_from_utc_to_local(utc_datetime):
-            now_timestamp = time.time()
-            offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
-            return utc_datetime + offset
 
 
-        df2_new = pd.DataFrame(columns=["Timestamps:"])
-        for index, row in df2.iterrows():
-            line2= str(row)
-            line2=line2[15:31]
-            timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
+        with open(file_name2, 'w') as f2:
 
-            for hexstamp in timestamp_hex.split():
-                gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
-                local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
-                    # Event separation
-            if (line2[0] == "1"):
-                event = "PUFF_ON" + " " + str(local_time)
-            elif (line2[0] == "2"):
-                event = "PUFF_OFF" + " " + str(local_time)
-            elif (line2[0] == "3"):
-                event = "TOUCH_ON" + " " + str(local_time)
-            elif (line2[0] == "4"):
-                event = "TOUCH_OFF" + " " + str(local_time)
-            elif (line2[0] == "5"):
-                event = "TEMPERATURE_ON" + " " + str(local_time)
-            elif (line2[0] == "6"):
-                event = "TEMPERATURE_OFF" + " " + str(local_time)
-            elif (line2[0] == "E"):
-                event = "READ_TIME" + " " + str(local_time)
-            elif (line2[0] == "F"):
-                event = "SET_TIME" + " " + str(local_time)
-            else:
-                event = "Time"
-                print("issue")
+            df2_new = pd.DataFrame(columns=["Timestamps:"])
 
-            df2_new.loc[len(df2_new)] = [event]
+            def datetime_from_utc_to_local(utc_datetime):
+                now_timestamp = time.time()
+                offset = datetime.fromtimestamp(now_timestamp) - datetime.utcfromtimestamp(now_timestamp)
+                return utc_datetime + offset
 
-        df2_new["Timestamps:"] = df2_new["Timestamps:"].apply(lambda x: add_comma_if_words(x))
-        df2_new[["Event", "Time"]] = df2_new["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
-        df2_new.drop("Timestamps:", axis=1, inplace=True)
-        df2_new["Time"] = df2_new['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True)
-        df2_new[["Date", "Time"]] = df2_new["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
-        format_time_column(df2_new, "Time")
-        df2_new["Time_subseconds"] = df2_new['Time'].apply(time_to_seconds_subseconds)
+            f2.write(str("Local Time: " + str(current_time) + "\n"))
+
+            for index, row in df2.iterrows():
+                line2= str(row)
+                line2=line2[15:31]
+                timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
+
+                for hexstamp in timestamp_hex.split():
+                    gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                    local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
+                        # Event separation
+                if (line2[0] == "1"):
+                    event = "PUFF_ON" + " " + str(local_time)
+                elif (line2[0] == "2"):
+                    event = "PUFF_OFF" + " " + str(local_time)
+                elif (line2[0] == "3"):
+                    event = "TOUCH_ON" + " " + str(local_time)
+                elif (line2[0] == "4"):
+                    event = "TOUCH_OFF" + " " + str(local_time)
+                elif (line2[0] == "5"):
+                    event = "TEMPERATURE_ON" + " " + str(local_time)
+                elif (line2[0] == "6"):
+                    event = "TEMPERATURE_OFF" + " " + str(local_time)
+                elif (line2[0] == "E"):
+                    event = "READ_TIME" + " " + str(local_time)
+                elif (line2[0] == "F"):
+                    event = "SET_TIME" + " " + str(local_time)
+                else:
+                    event = "Time"
+                    print("issue")
+
+                df2_new.loc[len(df2_new)] = [event]
+
+            f2.write(df2_new.to_string(index=False) + "\n")
+
+        with open(file_name3, 'w') as f3:
+            df2_new["Timestamps:"] = df2_new["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+            df2_new[["Event", "Time"]] = df2_new["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+            df2_new.drop("Timestamps:", axis=1, inplace=True)
+            df2_new["Time"] = df2_new['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True)
+            df2_new[["Date", "Time"]] = df2_new["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
+            format_time_column(df2_new, "Time")
+            df2_new["Time_subseconds"] = df2_new['Time'].apply(time_to_seconds_subseconds)
+
+
+            df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
+
+            duration = 0
+
+            string1 = 'PUFF_ON'
+            string2 = 'PUFF_OFF'
+            string3 = 'TOUCH_ON'
+            string4 = 'TOUCH_OFF'
+
+            for index, row in df2_new.iterrows():
+                if index + 1 < len(df2_new) and row["Event"] == string3 and df2_new.loc[index + 1, 'Event'] == string4:
+                    new_row = pd.Series({'Event': "Touch", 'Date': row["Date"],
+                                         'Range': str(row["Time"]) + "-" + str(df2_new.loc[index + 1, 'Time']),
+                                         'Duration_in_seconds': str(
+                                             df2_new.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"])})
+                    df_v2.loc[df_v2.index.max() + 1] = new_row
+
+                if index + 1 < len(df2_new) and row["Event"] == string1 and df2_new.loc[index + 1, 'Event'] == string2:
+                    new_row = pd.Series({'Event': "PUFF", 'Date': row["Date"],
+                                         'Range': str(row["Time"]) + "-" + str(df2_new.loc[index + 1, 'Time']),
+                                         'Duration_in_seconds': str(
+                                             df2_new.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"])})
+                    df_v2.loc[df_v2.index.max() + 1] = new_row
+
+            df_v2 = df_v2.iloc[1:].reset_index(drop=True)
+
+
+            f3.write(df_v2.to_string(index=False) + "\n")
 
         df2_new["Time_round"] = df2_new['Time'].apply(round_to_nearest_second)
         df2_new['Time_in_seconds'] = df2_new['Time_round'].apply(convert_to_seconds)
