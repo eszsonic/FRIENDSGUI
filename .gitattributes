@@ -1,0 +1,1 @@
+FRIENDS[[:space:]]Serial[[:space:]]Monitor.exe filter=lfs diff=lfs merge=lfs -text
