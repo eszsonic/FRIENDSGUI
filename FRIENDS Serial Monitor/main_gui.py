@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.ticker import MultipleLocator
 from matplotlib.ticker import AutoLocator, NullFormatter
+import matplotlib
+matplotlib.use('TkAgg')
 
 import numpy as np
 
@@ -233,7 +235,7 @@ class Application(ttk.Frame):
 
         self.instruction_label = ttk.Label(
             lf_rx,
-            text="Please click 'Clear' button to enable 'Read Data' button")
+            text="Please click 'Clear' button to clear the monitor & enable 'Read Data' button")
         self.instruction_label.pack(expand=False, side="left")
 
     def reload_com_btn(self):
@@ -255,6 +257,7 @@ class Application(ttk.Frame):
             self.btn_read.config(state="normal")
             self.btn_time.config(state="normal")
             self.btn_close.config(state="normal")
+            self.btn_sdc.config(state="normal")
 
             self.lb_rx.config(state="normal")
             self.btn_rxexp.config(state="normal")
@@ -363,12 +366,12 @@ class Application(ttk.Frame):
         _send_data_sdc1 = "e"
         self.serialcom.serial.write(_send_data_sdc1.encode("utf-8"))
 
-        time.sleep(1)
-        _send_data_y = "y"
-        self.serialcom.serial.write(_send_data_y.encode("utf-8"))
+        #time.sleep(1)
+        #_send_data_y = "y"
+        #self.serialcom.serial.write(_send_data_y.encode("utf-8"))
 
         self.btn_read.config(state="disabled")
-
+        self.btn_yes.config(state="normal")
 
 
     def send_text_btn_r(self):
@@ -386,6 +389,7 @@ class Application(ttk.Frame):
 
         # self.lb_tx.insert(tk.END, _send_data_r)
         self.btn_save.config(state="normal")
+        self.btn_read.config(state="disabled")
 
 
     def save_data(self):
@@ -421,12 +425,13 @@ class Application(ttk.Frame):
                         ((str(self.lb_rx.get(i))[0:6]) != "Number") and
                         ((str(self.lb_rx.get(i))[0:11]) != "Timestamps:") and
                         ((str(self.lb_rx.get(i))[0:8]) != "Internal") and
+                        ((str(self.lb_rx.get(i))[0:4]) != "Puff") and
+                        ((str(self.lb_rx.get(i))[0:5]) != "Touch") and
                         ((str(self.lb_rx.get(i))[0:3]) != "Set")):
                     df2.loc[len(df2)] = [str(self.lb_rx.get(i))]
                     # f.write(str(self.lb_rx.get(i)) + "\n")
             f1.write(str(tm2) + "\n")
             f1.write(df2.to_string(index=False) + "\n")
-
 
         self.btn_erase.config(state="normal")
         self.btn_read.config(state="disabled")
@@ -436,7 +441,7 @@ class Application(ttk.Frame):
 
 
         def add_comma_if_words(string):
-            words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME"]
+            words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME","TEMPERATURE_ON","TEMPERATURE_OFF"]
             for word in words_to_replace:
                 string = string.replace(word, f"{word},")
             return string
@@ -499,6 +504,9 @@ class Application(ttk.Frame):
             total_seconds = hours * 3600 + minutes * 60 + seconds
             return total_seconds
 
+        def seconds_to_milliseconds(seconds):
+            milliseconds = float(seconds) * 1000
+            return "{:.4f}".format(milliseconds)
 
 
         with open(file_name2, 'w') as f2:
@@ -516,7 +524,6 @@ class Application(ttk.Frame):
                 line2= str(row)
                 line2=line2[15:31]
                 timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
-
                 for hexstamp in timestamp_hex.split():
                     gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
                     local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
@@ -542,7 +549,7 @@ class Application(ttk.Frame):
                     print("issue")
 
                 df2_new.loc[len(df2_new)] = [event]
-
+            df2_new = df2_new[~df2_new['Timestamps:'].str.startswith('TEMP')]
             f2.write(df2_new.to_string(index=False) + "\n")
 
         with open(file_name3, 'w') as f3:
@@ -554,6 +561,20 @@ class Application(ttk.Frame):
             format_time_column(df2_new, "Time")
             df2_new["Time_subseconds"] = df2_new['Time'].apply(time_to_seconds_subseconds)
 
+            def format_time(input_time):
+                try:
+                    # Parse the input time
+                    time_obj = datetime.strptime(input_time, "%H:%M:%S.%f")
+
+                    # Format the time with two digits for hours, minutes, and seconds, and six decimal points
+                    formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-1]
+
+                    return formatted_time
+                except ValueError:
+                    # Handle the case where the input time format is invalid
+                    return "Invalid Time Format"
+
+            df2_new['Time'] = df2_new['Time'].apply(lambda x: format_time(x))
 
             df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
 
@@ -563,25 +584,28 @@ class Application(ttk.Frame):
             string2 = 'PUFF_OFF'
             string3 = 'TOUCH_ON'
             string4 = 'TOUCH_OFF'
+            df2_new.reset_index(drop=True, inplace=True)
 
             for index, row in df2_new.iterrows():
                 if index + 1 < len(df2_new) and row["Event"] == string3 and df2_new.loc[index + 1, 'Event'] == string4:
-                    new_row = pd.Series({'Event': "Touch", 'Date': row["Date"],
+                    new_row = pd.Series({'Event': "TOUCH", 'Date': row["Date"],
                                          'Range': str(row["Time"]) + "-" + str(df2_new.loc[index + 1, 'Time']),
                                          'Duration_in_seconds': str(
                                              df2_new.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"])})
                     df_v2.loc[df_v2.index.max() + 1] = new_row
 
                 if index + 1 < len(df2_new) and row["Event"] == string1 and df2_new.loc[index + 1, 'Event'] == string2:
+
                     new_row = pd.Series({'Event': "PUFF", 'Date': row["Date"],
                                          'Range': str(row["Time"]) + "-" + str(df2_new.loc[index + 1, 'Time']),
                                          'Duration_in_seconds': str(
                                              df2_new.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"])})
                     df_v2.loc[df_v2.index.max() + 1] = new_row
-
             df_v2 = df_v2.iloc[1:].reset_index(drop=True)
+            df_v2['Duration(ms)'] = df_v2['Duration_in_seconds'].apply(seconds_to_milliseconds)
+            df_v2 = df_v2.drop('Duration_in_seconds', axis=1)
 
-
+            print(df_v2)
             f3.write(df_v2.to_string(index=False) + "\n")
 
         df2_new["Time_round"] = df2_new['Time'].apply(round_to_nearest_second)
@@ -954,7 +978,7 @@ class Application(ttk.Frame):
 
 
         def add_comma_if_words(string):
-            words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME"]
+            words_to_replace = ["SET_TIME", "TOUCH_ON", "TOUCH_OFF", "PUFF_ON", "PUFF_OFF", "READ_TIME","TEMPERATURE_ON","TEMPERATURE_OFF"]
             for word in words_to_replace:
                 string = string.replace(word, f"{word},")
             return string
@@ -1017,6 +1041,10 @@ class Application(ttk.Frame):
             total_seconds = hours * 3600 + minutes * 60 + seconds
             return total_seconds
 
+        def seconds_to_milliseconds(seconds):
+            milliseconds = float(seconds) * 1000
+            return "{:.4f}".format(milliseconds)
+
         self.read_status.config(text="Converting timestamps", background="lightgreen")
         file_path = filedialog.askopenfilename(filetypes=[('Text Files', '*.txt')])
 
@@ -1064,7 +1092,7 @@ class Application(ttk.Frame):
 
             df2.loc[len(df2)] = [event]
         #f2.write(str(tm) + "\n")
-        
+        df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
         df3=df2.copy()
         
         df2["Timestamps:"] = df2["Timestamps:"].apply(lambda x: add_comma_if_words(x))
@@ -1075,17 +1103,31 @@ class Application(ttk.Frame):
         format_time_column(df2, "Time")
         df2["Time_subseconds"] = df2['Time'].apply(time_to_seconds_subseconds)
         df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
-
         duration = 0
+
+        def format_time(input_time):
+            try:
+                # Parse the input time
+                time_obj = datetime.strptime(input_time, "%H:%M:%S.%f")
+
+                # Format the time with two digits for hours, minutes, and seconds, and six decimal points
+                formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-1]
+
+                return formatted_time
+            except ValueError:
+                # Handle the case where the input time format is invalid
+                return "Invalid Time Format"
+
+        df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
 
         string1 = 'PUFF_ON'
         string2 = 'PUFF_OFF'
         string3 = 'TOUCH_ON'
         string4 = 'TOUCH_OFF'
-
+        df2.reset_index(drop=True, inplace=True)
         for index, row in df2.iterrows():
             if index + 1 < len(df2) and row["Event"] == string3 and df2.loc[index + 1, 'Event'] == string4:
-                new_row = pd.Series({'Event': "Touch", 'Date': row["Date"],
+                new_row = pd.Series({'Event': "TOUCH", 'Date': row["Date"],
                                         'Range': str(row["Time"]) + "-" + str(df2.loc[index + 1, 'Time']),
                                         'Duration_in_seconds': str(
                                             df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"])})
@@ -1099,7 +1141,8 @@ class Application(ttk.Frame):
                 df_v2.loc[df_v2.index.max() + 1] = new_row
 
         df_v2 = df_v2.iloc[1:].reset_index(drop=True)
-    
+        df_v2['Duration(ms)'] = df_v2['Duration_in_seconds'].apply(seconds_to_milliseconds)
+        df_v2 = df_v2.drop('Duration_in_seconds', axis=1)
 
         self.read_status.config(text="Save timestamps and generating plots", background="lightgreen")
         _fname = filedialog.asksaveasfilename(
@@ -1108,12 +1151,13 @@ class Application(ttk.Frame):
             filetypes=[("text file", "*.txt"), ("all files", "*.*")])
 
         if _fname:
-            _fname = file_path.split(".")[0]+"_converted.txt"
-            file_name3=file_path.split(".")[0]+"_duration.txt"
+            _fname = _fname.split(".")[0]+"_converted.txt"
+            file_name3=_fname.split(".")[0]+"_duration.txt"
+
 
 
         current_time = DT.datetime.now()
-        
+
         with open(_fname, 'w') as f2:
             for i in range(self.lb_rx.size()):
                 if ((str(self.lb_rx.get(i))[0:8]) == "Internal"):
@@ -1121,7 +1165,6 @@ class Application(ttk.Frame):
             #f2.write(str(tm2) + "\n")
             f2.write(str("Local Time: " + str(current_time) + "\n"))
             f2.write(df3.to_string(index=False) + "\n")
-
         with open(file_name3, 'w') as f3:
             f3.write(df_v2.to_string(index=False) + "\n")        
         
