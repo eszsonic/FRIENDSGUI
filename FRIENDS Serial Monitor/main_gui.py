@@ -427,6 +427,7 @@ class Application(ttk.Frame):
                         ((str(self.lb_rx.get(i))[0:8]) != "Internal") and
                         ((str(self.lb_rx.get(i))[0:4]) != "Puff") and
                         ((str(self.lb_rx.get(i))[0:5]) != "Touch") and
+                        ((str(self.lb_rx.get(i))[0:5]) != "Read") and
                         ((str(self.lb_rx.get(i))[0:3]) != "Set")):
                     df2.loc[len(df2)] = [str(self.lb_rx.get(i))]
                     # f.write(str(self.lb_rx.get(i)) + "\n")
@@ -508,6 +509,24 @@ class Application(ttk.Frame):
             milliseconds = float(seconds) * 1000
             return "{:.4f}".format(milliseconds)
 
+        def format_column(value):
+            value_str = str(value)
+            left_aligned = value_str[:15]
+            right_aligned = value_str[15:]
+            return f"{left_aligned:<8}{right_aligned:>}"
+
+        def format_time(input_time):
+            try:
+                # Parse the input time
+                time_obj = datetime.strptime(input_time, "%H:%M:%S.%f")
+
+                formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-3]
+
+                return formatted_time
+            except ValueError:
+                # Handle the case where the input time format is invalid
+                return "Invalid Time Format"
+
 
         with open(file_name2, 'w') as f2:
 
@@ -537,9 +556,13 @@ class Application(ttk.Frame):
                 elif (line2[0] == "4"):
                     event = "TOUCH_OFF" + " " + str(local_time)
                 elif (line2[0] == "5"):
-                    event = "TEMPERATURE_ON" + " " + str(local_time)
+                    hex_number=str(line2[4:16])
+                    decimal_number = int(hex_number, 16)
+                    event = "TEMPERATURE_ON" + " " + str(decimal_number)
                 elif (line2[0] == "6"):
-                    event = "TEMPERATURE_OFF" + " " + str(local_time)
+                    hex_number = str(line2[4:16])
+                    decimal_number = int(hex_number, 16)
+                    event = "TEMPERATURE_OFF" + " " + str(decimal_number)
                 elif (line2[0] == "E"):
                     event = "READ_TIME" + " " + str(local_time)
                 elif (line2[0] == "F"):
@@ -549,10 +572,16 @@ class Application(ttk.Frame):
                     print("issue")
 
                 df2_new.loc[len(df2_new)] = [event]
-            df2_new = df2_new[~df2_new['Timestamps:'].str.startswith('TEMP')]
-            f2.write(df2_new.to_string(index=False) + "\n")
+            df2_n = df2_new.copy()
+            df2_n["Timestamps:"] = df2_n["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+            df2_n[["Event", "Information"]] = df2_n["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+            df2_n.drop("Timestamps:", axis=1, inplace=True)
+            f2.write(df2_n.to_string(index=False) + "\n")
 
         with open(file_name3, 'w') as f3:
+            df2_new_temp = df2_new.copy()
+            df2_new = df2_new[~df2_new['Timestamps:'].str.startswith('TEMP')]
+
             df2_new["Timestamps:"] = df2_new["Timestamps:"].apply(lambda x: add_comma_if_words(x))
             df2_new[["Event", "Time"]] = df2_new["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
             df2_new.drop("Timestamps:", axis=1, inplace=True)
@@ -561,18 +590,43 @@ class Application(ttk.Frame):
             format_time_column(df2_new, "Time")
             df2_new["Time_subseconds"] = df2_new['Time'].apply(time_to_seconds_subseconds)
 
-            def format_time(input_time):
-                try:
-                    # Parse the input time
-                    time_obj = datetime.strptime(input_time, "%H:%M:%S.%f")
+            #for temperature graph
+            print(df2_new_temp.head(25))
+            df2_new_temp["Timestamps:"] = df2_new_temp["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+            df2_new_temp[["Event", "Time"]] = df2_new_temp["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+            df2_new_temp.drop("Timestamps:", axis=1, inplace=True)
+            print(df2_new_temp.head(25))
+            df2_new_temp["Time"] = df2_new_temp['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True)
+            df2_new_temp[["Temperature", "Time"]] = df2_new_temp["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
+            print(df2_new_temp.head(25))
 
-                    # Format the time with two digits for hours, minutes, and seconds, and six decimal points
-                    formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-1]
+            # Find the NaN values in the 'Time' column of 'TEMPERATURE_ON' row
+            for index, row in df2_new_temp.iterrows():
+                if (row['Event'] == 'TEMPERATURE_ON') and pd.isna(row['Time']):
+                    df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index-2, 'Time']
+                if (row['Event'] == 'TEMPERATURE_OFF') and pd.isna(row['Time']):
+                    df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index-2, 'Time']
 
-                    return formatted_time
-                except ValueError:
-                    # Handle the case where the input time format is invalid
-                    return "Invalid Time Format"
+
+            format_time_column(df2_new_temp, "Time")
+            df2_new_temp["Time_subseconds"] = df2_new_temp['Time'].apply(time_to_seconds_subseconds)
+            df2_new_temp['Date'] = pd.to_datetime(df2_new_temp['Temperature'], errors='coerce')
+
+            for index, row in df2_new_temp.iterrows():
+                if (row['Event'] == 'TEMPERATURE_ON' and pd.isna(row['Date'])):
+                    df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
+                if (row['Event'] == 'TEMPERATURE_OFF' and pd.isna(row['Date'])):
+                    df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
+
+            df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x)
+            df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+            df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second)
+            df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds)
+
+            
+
+
+
 
             df2_new['Time'] = df2_new['Time'].apply(lambda x: format_time(x))
 
@@ -595,7 +649,6 @@ class Application(ttk.Frame):
                     df_v2.loc[df_v2.index.max() + 1] = new_row
 
                 if index + 1 < len(df2_new) and row["Event"] == string1 and df2_new.loc[index + 1, 'Event'] == string2:
-
                     new_row = pd.Series({'Event': "PUFF", 'Date': row["Date"],
                                          'Range': str(row["Time"]) + "-" + str(df2_new.loc[index + 1, 'Time']),
                                          'Duration_in_seconds': str(
@@ -603,21 +656,22 @@ class Application(ttk.Frame):
                     df_v2.loc[df_v2.index.max() + 1] = new_row
             df_v2 = df_v2.iloc[1:].reset_index(drop=True)
             df_v2['Duration(ms)'] = df_v2['Duration_in_seconds'].apply(seconds_to_milliseconds)
+            df_v2['Duration(ms)'] = df_v2['Duration(ms)'].astype(float).round(1)
             df_v2 = df_v2.drop('Duration_in_seconds', axis=1)
 
-            print(df_v2)
             f3.write(df_v2.to_string(index=False) + "\n")
 
         df2_new["Time_round"] = df2_new['Time'].apply(round_to_nearest_second)
         df2_new['Time_in_seconds'] = df2_new['Time_round'].apply(convert_to_seconds)
         df2=df2_new.copy()
+        #take the dataframe from 2nd file df2_n and find time in seconds for each event
+
 
         plot_type = self.cb_plot.get()
 
         if plot_type=="Stem":
-            def generate_graph(df2):
-
-                unique_dates = df2['Date'].unique()
+            def generate_graph(df2_new_temp):
+                unique_dates = df2_new_temp['Date'].unique()
                 """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
@@ -642,42 +696,69 @@ class Application(ttk.Frame):
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
+                    date= str(date)[:10]
                     print(date)
                     total_duration = 0
                     dur_gth = 0
                     number_of_puff = 0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
+                        """
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                            time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                        """
+
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
 
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True,gridspec_kw={'height_ratios': [1, 2, 1, 2]})
 
                     option = self.cb_plot_puff.get()
                     if option == "Display all puffing events":
@@ -695,9 +776,9 @@ class Application(ttk.Frame):
                                                                   label='PUFF> {}'.format(puff_duration + "s"))
                         stemline.set_linewidth(10)
 
-                    ax1.set_ylabel(date)
+                    #ax1.set_ylabel(date)
                     ax1.legend()
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
+                    ax1.set_title("Date: "+ str(date) + " ,Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -717,28 +798,116 @@ class Application(ttk.Frame):
                     plt.xticks(minor_ticks, rotation=90)
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
-                    fig.set_size_inches(17, 3)
+                    fig.set_size_inches(17, 7)
 
 
-                    ax2.stem(np.arange(86400), time_matrix2, markerfmt=' ',basefmt=' ', linefmt='b', label="TOUCH")
+                    markerline, stemline, baseline = ax2.stem(np.arange(86400), time_matrix2, markerfmt=' ',basefmt=' ', linefmt='b', label="TOUCH")
+                    stemline.set_linewidth(10)
                     #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
-                    ax2.set_ylabel(date)
+                    #ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
                     ax2.legend()
+
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
                     plt.tight_layout()
-                    # plt.show()
+                    plt.show()
 
 
-                return ax1, ax2
+                return ax1, ax3, ax2, ax4
 
-            ax1, ax2 = generate_graph(df2=df2)
+            ax1, ax3, ax2, ax4, = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Step":
-            def generate_graph(df2):
+            def generate_graph(df2_new_temp):
 
-                unique_dates = df2['Date'].unique()
+                unique_dates = df2_new_temp['Date'].unique()
                 """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
@@ -763,42 +932,69 @@ class Application(ttk.Frame):
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
+                    date = str(date)[:10]
                     print(date)
                     total_duration = 0
                     dur_gth=0
                     number_of_puff=0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
+                        """
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                            time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                        """
+
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
 
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True,gridspec_kw={'height_ratios': [1, 2, 1, 2]})
                     option = self.cb_plot_puff.get()
                     if option == "Display all puffing events":
                        ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
@@ -813,8 +1009,8 @@ class Application(ttk.Frame):
                     ax1.set_ylim(0, 1.1)
                     ax1.set_xlabel("Time")
                     ax1.legend()
-                    ax1.set_ylabel(date)
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    #ax1.set_ylabel(date)
+                    ax1.set_title("Date: " + str(date) + " ,Total puffing time above threshold: " + str(dur_gth) + 's' + "," + "Num of Puffs above threshold: " + str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -834,7 +1030,7 @@ class Application(ttk.Frame):
                     plt.xticks(minor_ticks, rotation=90)
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
-                    fig.set_size_inches(17, 3)
+                    fig.set_size_inches(17, 7)
 
 
                     ax2.step(np.arange(86400), time_matrix2, where='post', label="TOUCH")
@@ -843,19 +1039,107 @@ class Application(ttk.Frame):
 
                     #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
                     ax2.legend()
-                    ax2.set_ylabel(date)
+                    #ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
-                    plt.tight_layout()
 
-                return ax1, ax2
-            ax1, ax2 = generate_graph(df2=df2)
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
+                    plt.tight_layout()
+                    plt.show()
+
+                return ax1,ax3,ax2,ax4
+            ax1, ax3, ax2, ax4 = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Line":
-            def generate_graph(df2):
+            def generate_graph(df2_new_temp):
 
-                unique_dates = df2['Date'].unique()
+                unique_dates = df2_new_temp['Date'].unique()
                 """
                 x_ticks = [0, 3600, 7200, 10800, 14400, 18000, 21600, 25200, 28800, 32400, 36000, 39600, 43200, 46800,
                            50400, 54000,
@@ -876,56 +1160,88 @@ class Application(ttk.Frame):
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
+                    date = str(date)[:10]
                     print(date)
                     total_duration = 0
                     dur_gth=0
                     number_of_puff=0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
+                        """
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                            time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                        """
+
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
 
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    #fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True,gridspec_kw={'height_ratios': [1, 1, 5]})
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True,gridspec_kw={'height_ratios': [1, 2, 1, 2]})
                     option = self.cb_plot_puff.get()
-                    if option=="Display all puffing events":
-                       ax1.plot(np.arange(86400), time_matrix1, color="green", label='PUFF> {}'.format(puff_duration + "s"))
-                       ax1.plot(np.arange(86400), time_matrix11, color="red", label='PUFF< {}'.format(puff_duration + "s"))
-                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
-                       ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
-                    if option=="Display puffs that exceed the threshold":
-                       ax1.plot(np.arange(86400), time_matrix1, color="green",label='PUFF> {}'.format(puff_duration + "s"))
-                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                    option = self.cb_plot_puff.get()
+                    if option == "Display all puffing events":
+                        ax1.plot(np.arange(86400), time_matrix1, color="green",
+                                 label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.plot(np.arange(86400), time_matrix11, color="red",
+                                 label='PUFF< {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                        ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
+                    if option == "Display puffs that exceed the threshold":
+                        ax1.plot(np.arange(86400), time_matrix1, color="green",
+                                 label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
                     ax1.legend()
                     ax1.set_ylim(0, 1.1)
                     ax1.set_xlabel("Time")
-                    ax1.set_ylabel(date)
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    #ax1.set_ylabel(date)
+                    ax1.set_title("Date: " + str(date) + " ,Total puffing time above threshold: " + str( dur_gth) + 's' + "," + "Num of Puffs above threshold: " + str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -946,7 +1262,7 @@ class Application(ttk.Frame):
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
 
-                    fig.set_size_inches(17, 3)
+                    fig.set_size_inches(17, 7)
 
 
                     ax2.plot(np.arange(86400), time_matrix2, color="blue", label="TOUCH")
@@ -954,12 +1270,100 @@ class Application(ttk.Frame):
                     ax2.set_ylim(0, 1.1)
 
                     ax2.legend()
-                    ax2.set_ylabel(date)
+                    #ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
-                    plt.tight_layout()
 
-                return ax1, ax2
-            ax1, ax2 = generate_graph(df2=df2)
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
+                    plt.tight_layout()
+                    plt.show()
+
+                return ax1, ax3, ax2, ax4
+            ax1, ax3, ax2, ax4 = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
@@ -1079,9 +1483,13 @@ class Application(ttk.Frame):
             elif (line2[0] == "4"):
                 event = "TOUCH_OFF" + " " + str(local_time)
             elif (line2[0] == "5"):
-                event = "TEMPERATURE_ON" + " " + str(local_time)
+                hex_number = str(line2[4:16])
+                decimal_number = int(hex_number, 16)
+                event = "TEMPERATURE_ON" + " " + str(decimal_number)
             elif (line2[0] == "6"):
-                event = "TEMPERATURE_OFF" + " " + str(local_time)
+                hex_number = str(line2[4:16])
+                decimal_number = int(hex_number, 16)
+                event = "TEMPERATURE_OFF" + " " + str(decimal_number)
             elif (line2[0] == "E"):
                 event = "READ_TIME" + " " + str(local_time)
             elif (line2[0] == "F"):
@@ -1092,9 +1500,17 @@ class Application(ttk.Frame):
 
             df2.loc[len(df2)] = [event]
         #f2.write(str(tm) + "\n")
-        df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
+        #df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
+
+        df2_new_temp = df2.copy()
+
+
         df3=df2.copy()
-        
+        df3["Timestamps:"] = df3["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+        df3[["Event", "Information"]] = df3["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+        df3.drop("Timestamps:", axis=1, inplace=True)
+
+        df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
         df2["Timestamps:"] = df2["Timestamps:"].apply(lambda x: add_comma_if_words(x))
         df2[["Event", "Time"]] = df2["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
         df2.drop("Timestamps:", axis=1, inplace=True)
@@ -1102,8 +1518,6 @@ class Application(ttk.Frame):
         df2[["Date", "Time"]] = df2["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
         format_time_column(df2, "Time")
         df2["Time_subseconds"] = df2['Time'].apply(time_to_seconds_subseconds)
-        df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
-        duration = 0
 
         def format_time(input_time):
             try:
@@ -1111,14 +1525,45 @@ class Application(ttk.Frame):
                 time_obj = datetime.strptime(input_time, "%H:%M:%S.%f")
 
                 # Format the time with two digits for hours, minutes, and seconds, and six decimal points
-                formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-1]
+                formatted_time = time_obj.strftime("%H:%M:%S.%f")[:-3]
 
                 return formatted_time
             except ValueError:
                 # Handle the case where the input time format is invalid
                 return "Invalid Time Format"
 
+        #For temperature graph
+
+        #print(df2_new_temp.head())
+        df2_new_temp["Timestamps:"] = df2_new_temp["Timestamps:"].apply(lambda x: add_comma_if_words(x))
+        df2_new_temp[["Event", "Time"]] = df2_new_temp["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", ")))
+        df2_new_temp.drop("Timestamps:", axis=1, inplace=True)
+        df2_new_temp["Time"] = df2_new_temp['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True)
+        df2_new_temp[["Temperature", "Time"]] = df2_new_temp["Time"].apply(lambda x: pd.Series(str(x).split(", ")))
+        for index, row in df2_new_temp.iterrows():
+            if (row['Event'] == 'TEMPERATURE_ON') and pd.isna(row['Time']):
+                df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index - 2, 'Time']
+            if (row['Event'] == 'TEMPERATURE_OFF') and pd.isna(row['Time']):
+                df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index - 2, 'Time']
+        format_time_column(df2_new_temp, "Time")
+        df2_new_temp["Time_subseconds"] = df2_new_temp['Time'].apply(time_to_seconds_subseconds)
+        df2_new_temp['Date'] = pd.to_datetime(df2_new_temp['Temperature'], errors='coerce')
+        for index, row in df2_new_temp.iterrows():
+            if (row['Event'] == 'TEMPERATURE_ON' and pd.isna(row['Date'])):
+                df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
+            if (row['Event'] == 'TEMPERATURE_OFF' and pd.isna(row['Date'])):
+                df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
+        df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x)
+        df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+        df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second)
+        df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds)
+
+
         df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
+        df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
+        duration = 0
+
+
 
         string1 = 'PUFF_ON'
         string2 = 'PUFF_OFF'
@@ -1142,6 +1587,7 @@ class Application(ttk.Frame):
 
         df_v2 = df_v2.iloc[1:].reset_index(drop=True)
         df_v2['Duration(ms)'] = df_v2['Duration_in_seconds'].apply(seconds_to_milliseconds)
+        df_v2['Duration(ms)'] = df_v2['Duration(ms)'].astype(float).round(1)
         df_v2 = df_v2.drop('Duration_in_seconds', axis=1)
 
         self.read_status.config(text="Save timestamps and generating plots", background="lightgreen")
@@ -1176,7 +1622,7 @@ class Application(ttk.Frame):
 
         plot_type=self.cb_plot.get()
         if plot_type=="Stem":
-            def generate_graph(df2):
+            def generate_graph(df2_new_temp):
 
                 unique_dates = df2['Date'].unique()
                 """
@@ -1204,41 +1650,61 @@ class Application(ttk.Frame):
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
                     print(date)
+                    date = str(date)[:10]
                     total_duration = 0
                     dur_gth = 0
                     number_of_puff = 0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
 
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [1, 2, 1, 2]})
 
                     option = self.cb_plot_puff.get()
                     if option == "Display all puffing events":
@@ -1256,9 +1722,12 @@ class Application(ttk.Frame):
                                                                   label='PUFF> {}'.format(puff_duration + "s"))
                         stemline.set_linewidth(10)
 
-                    ax1.set_ylabel(date)
+                    #ax1.set_ylabel(date)
                     ax1.legend()
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+"Num of Puffs above threshold: "+str(number_of_puff))
+                    ax1.set_ylim(0, 1.1)
+                    ax1.set_xlabel("Time")
+                    ax1.set_title("Date: " + str(date) + " ,Total puffing time above threshold: " + str(
+                        dur_gth) + 's' + "," + "Num of Puffs above threshold: " + str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -1278,26 +1747,113 @@ class Application(ttk.Frame):
                     plt.xticks(minor_ticks, rotation=90)
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
-                    fig.set_size_inches(17, 3)
-
-
+                    fig.set_size_inches(17, 7)
                     ax2.stem(np.arange(86400), time_matrix2, markerfmt=' ',basefmt=' ', linefmt='b', label="TOUCH")
                     #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
-                    ax2.set_ylabel(date)
-                    ax2.set_xlabel("Time")
+                    ax2.set_ylim(0, 1.1)
                     ax2.legend()
+                    #ax2.set_ylabel(date)
+                    ax2.set_xlabel("Time")
                     plt.tight_layout()
-                    # plt.show()
+
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
+                    plt.tight_layout()
+                    plt.show()
 
 
-                return ax1, ax2
+                return ax1, ax3, ax2, ax4
 
-            ax1, ax2 = generate_graph(df2=df2)
+            ax1, ax3, ax2, ax4 = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Step":
-            def generate_graph(df2):
+            def generate_graph(df2_new_temp):
 
                 unique_dates = df2['Date'].unique()
                 """
@@ -1325,41 +1881,61 @@ class Application(ttk.Frame):
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
                     print(date)
+                    date = str(date)[:10]
                     total_duration = 0
                     dur_gth=0
                     number_of_puff=0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
 
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[
+                            index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [1, 2, 1, 2]})
                     option = self.cb_plot_puff.get()
                     if option == "Display all puffing events":
                        ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
@@ -1371,11 +1947,13 @@ class Application(ttk.Frame):
                         ax1.step(np.arange(86400), time_matrix1, where='post', color="green", label='PUFF> {}'.format(puff_duration + "s"))
                         ax1.fill_between(np.arange(86400), time_matrix1, step="post", color='green', alpha=0.5)
 
+                    ax1.legend()
                     ax1.set_ylim(0, 1.1)
                     ax1.set_xlabel("Time")
-                    ax1.legend()
-                    ax1.set_ylabel(date)
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+
+                    #ax1.set_ylabel(date)
+                    ax1.set_title("Date: " + str(date) + " ,Total puffing time above threshold: " + str(
+                        dur_gth) + 's' + "," + "Num of Puffs above threshold: " + str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -1395,7 +1973,7 @@ class Application(ttk.Frame):
                     plt.xticks(minor_ticks, rotation=90)
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
-                    fig.set_size_inches(17, 3)
+                    fig.set_size_inches(17, 7)
 
 
                     ax2.step(np.arange(86400), time_matrix2, where='post', label="TOUCH")
@@ -1404,17 +1982,105 @@ class Application(ttk.Frame):
 
                     #ax2.set_xticks(np.array(x_ticks), np.array(x_labels), fontsize=10)
                     ax2.legend()
-                    ax2.set_ylabel(date)
+                    #ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
                     plt.tight_layout()
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
 
-                return ax1, ax2
-            ax1, ax2 = generate_graph(df2=df2)
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
+                    plt.tight_layout()
+                    plt.show()
+
+                return ax1, ax3, ax2, ax4
+            ax1, ax3, ax2, ax4 = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
         if plot_type == "Line":
-            def generate_graph(df2):
+            def generate_graph(df2_new_temp):
 
                 unique_dates = df2['Date'].unique()
                 """
@@ -1437,56 +2103,85 @@ class Application(ttk.Frame):
                 puff_duration = 0
                 puff_duration = self.en_puff.get()
                 for date in unique_dates:
-                    print(date)
+                    #print(date)
+                    date = str(date)[:10]
                     total_duration = 0
                     dur_gth=0
                     number_of_puff=0
                     # Get the rows with the current date
-                    rows = df2[df2['Date'] == date]
+                    rows = df2_new_temp[df2_new_temp['Date'] == date]
 
                     time_matrix1 = np.zeros((86400,), dtype=int)
                     time_matrix11 = np.zeros((86400,), dtype=int)
                     time_matrix2 = np.zeros((86400,), dtype=int)
+                    time_matrix3 = np.zeros((86400,), dtype=int)
+                    time_matrix31 = np.zeros((86400,), dtype=int)
+                    time_matrix4 = np.zeros((86400,), dtype=int)
+                    time_matrix41 = np.zeros((86400,), dtype=int)
 
                     string1 = 'PUFF_ON'
                     string2 = 'PUFF_OFF'
                     string3 = 'TOUCH_ON'
                     string4 = 'TOUCH_OFF'
+                    string5 = 'TEMPERATURE_ON'
+                    string6 = 'TEMPERATURE_OFF'
                     for index, row in rows.iterrows():
-                        if index + 1 < len(df2) and row['Event'] == string1 and df2.loc[index + 1, 'Event'] == string2:
-                            duration = df2.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string1 and df2_new_temp.loc[index + 1, 'Event'] == string2:
+                            duration = df2_new_temp.loc[index + 1, 'Time_subseconds'] - row["Time_subseconds"]
                             total_duration += duration
                             if float(duration) >= float(puff_duration):
                                 dur_gth += duration
-                                number_of_puff+=1
+                                number_of_puff += 1
                                 start_index = row["Time_in_seconds"]
-                                end_index = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix1[start_index:end_index + 1] = 1
                             else:
                                 start_index11 = row["Time_in_seconds"]
-                                end_index11 = df2.loc[index + 1, 'Time_in_seconds']
+                                end_index11 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                                 time_matrix11[start_index11:end_index11 + 1] = 1
-                        if index + 1 < len(df2) and row['Event'] == string3 and df2.loc[index + 1, 'Event'] == string4:
+                        if index + 1 < len(df2_new_temp) and row['Event'] == string3 and df2_new_temp.loc[ index + 1, 'Event'] == string4:
                             start_index = row["Time_in_seconds"]
-                            end_index = df2.loc[index + 1, 'Time_in_seconds']
+                            end_index = df2_new_temp.loc[index + 1, 'Time_in_seconds']
                             time_matrix2[start_index:end_index + 1] = 1
+                        """
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                            time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                        """
+
+                        if index + 1 <= len(df2_new_temp) and row['Event'] == string5 and df2_new_temp.loc[index + 1, 'Event'] == string6:
+                            start_index3 = row["Time_in_seconds"]
+                            end_index3 = df2_new_temp.loc[index + 1, 'Time_in_seconds']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "PUFF_OFF":
+                                time_matrix3[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix31[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
+                            if df2_new_temp.loc[index - 1, 'Event'] == "TOUCH_OFF":
+                                time_matrix4[start_index3] = df2_new_temp.loc[index, 'Temperature']
+                                time_matrix41[end_index3] = df2_new_temp.loc[index + 1, 'Temperature']
 
                     dur_gth = f"{dur_gth:.4f}"
-                    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+                    # fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex=True,gridspec_kw={'height_ratios': [1, 1, 5]})
+                    fig, (ax1, ax3, ax2, ax4) = plt.subplots(4, 1, sharex=True, gridspec_kw={'height_ratios': [1, 2, 1, 2]})
                     option = self.cb_plot_puff.get()
-                    if option=="Display all puffing events":
-                       ax1.plot(np.arange(86400), time_matrix1, color="green", label='PUFF> {}'.format(puff_duration + "s"))
-                       ax1.plot(np.arange(86400), time_matrix11, color="red", label='PUFF< {}'.format(puff_duration + "s"))
-                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
-                       ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
-                    if option=="Display puffs that exceed the threshold":
-                       ax1.plot(np.arange(86400), time_matrix1, color="green",label='PUFF> {}'.format(puff_duration + "s"))
-                       ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                    if option == "Display all puffing events":
+                        ax1.plot(np.arange(86400), time_matrix1, color="green",
+                                 label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.plot(np.arange(86400), time_matrix11, color="red",
+                                 label='PUFF< {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
+                        ax1.fill_between(np.arange(86400), time_matrix11, color='red', alpha=0.5)
+                    if option == "Display puffs that exceed the threshold":
+                        ax1.plot(np.arange(86400), time_matrix1, color="green",
+                                 label='PUFF> {}'.format(puff_duration + "s"))
+                        ax1.fill_between(np.arange(86400), time_matrix1, color='green', alpha=0.5)
                     ax1.legend()
                     ax1.set_ylim(0, 1.1)
                     ax1.set_xlabel("Time")
-                    ax1.set_ylabel(date)
-                    ax1.set_title("Total puffing time above threshold: " + str(dur_gth) + 's'+ ","+" Num of Puffs above threshold: "+str(number_of_puff))
+                    # ax1.set_ylabel(date)
+                    ax1.set_title("Date: " + str(date) + " ,Total puffing time above threshold: " + str(
+                        dur_gth) + 's' + "," + "Num of Puffs above threshold: " + str(number_of_puff))
                     ax2.set_xticks(x_ticks)
                     ax2.set_xticklabels(x_labels)
 
@@ -1502,29 +2197,114 @@ class Application(ttk.Frame):
                             minutes %= 60
                             minor_labels.append(f"{hours:02d}:{minutes:02d}")
                     plt.xticks(x_ticks, x_labels)
-                    #plt.minorticks_on()
+                    # plt.minorticks_on()
                     plt.xticks(minor_ticks, rotation=90)
                     plt.tick_params(axis='x', which="both", width=1, length=4)
 
-
-                    fig.set_size_inches(17, 3)
-
+                    fig.set_size_inches(17, 7)
 
                     ax2.plot(np.arange(86400), time_matrix2, color="blue", label="TOUCH")
                     ax2.fill_between(np.arange(86400), time_matrix2, color='blue', alpha=0.5)
                     ax2.set_ylim(0, 1.1)
 
                     ax2.legend()
-                    ax2.set_ylabel(date)
+                    # ax2.set_ylabel(date)
                     ax2.set_xlabel("Time")
-                    plt.tight_layout()
 
-                return ax1, ax2
-            ax1, ax2 = generate_graph(df2=df2)
+                    # Create stem plots
+                    stem3 = ax3.stem(np.arange(86400), time_matrix3, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem31 = ax3.stem(np.arange(86400), time_matrix31, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    stem4 = ax4.stem(np.arange(86400), time_matrix4, linefmt='blue', markerfmt=' ',
+                                     basefmt=" ",
+                                     label="Temperature ON")
+                    stem41 = ax4.stem(np.arange(86400), time_matrix41, linefmt='red', markerfmt=' ',
+                                      basefmt=" ",
+                                      label="Temperature OFF")
+
+                    for i, yval in enumerate(time_matrix3):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix31):
+                        if yval > 0:
+                            ax3.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix4):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+
+                    for i, yval in enumerate(time_matrix41):
+                        if yval > 0:
+                            ax4.annotate(round(yval, 2), (i, yval), textcoords="offset points",
+                                         xytext=(0, 5),
+                                         ha='center', va='bottom', rotation='vertical')
+                    """
+                    bars = ax3.bar(np.arange(86400), time_matrix3,color='blue',label="Temperature ON")
+                    bars1 = ax3.bar(np.arange(86400), time_matrix31,color='red',label="Temperature OFF",bottom=time_matrix3)
+
+                    for bar, yval in zip(bars, time_matrix3):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+
+                    # Add values on top of each bar in the second set, arrange text vertically above the bars
+                    for bar, yval in zip(bars1, time_matrix31):
+                        if yval > 0:
+                            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_y() + bar.get_height(), round(yval, 2),
+                                     ha='center', va='bottom', rotation='vertical')
+                    """
+
+                    ## find the maximum and minimum value for setting y axis
+                    max_matrix3 = max(time_matrix3)
+                    max_matrix31 = max(time_matrix31)
+
+                    non_zero_values3 = [x for x in time_matrix3 if x != 0]
+                    non_zero_values31 = [x for x in time_matrix31 if x != 0]
+
+                    min_matrix3 = min(non_zero_values3)
+                    min_matrix31 = min(non_zero_values31)
+
+                    max_combined3 = max(max_matrix3, max_matrix31)
+                    min_combined3 = min(min_matrix3, min_matrix31)
+
+                    max_matrix4 = max(time_matrix4)
+                    max_matrix41 = max(time_matrix41)
+
+                    non_zero_values4 = [x for x in time_matrix4 if x != 0]
+                    non_zero_values41 = [x for x in time_matrix41 if x != 0]
+
+                    min_matrix4 = min(non_zero_values4)
+                    min_matrix41 = min(non_zero_values41)
+
+                    max_combined4 = max(max_matrix4, max_matrix41)
+                    min_combined4 = min(min_matrix4, min_matrix41)
+
+                    ax3.set_ylabel("Temp for puff")
+                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
+                    ax3.legend()
+
+                    ax4.set_ylabel("Temp for touch")
+                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
+                    ax4.legend()
+                    plt.tight_layout()
+                    plt.show()
+
+                return ax1, ax3, ax2, ax4
+            ax1, ax3, ax2, ax4 = generate_graph(df2_new_temp=df2_new_temp)
             self.read_status.config(text="Plot generation Done", background="lightgreen")
             plt.show()
 
-        self.btn_read.config(state="disabled")
         self.read_status.config(text="Ready", background="lightgray")
     def send_text_btn_e(self):
         _send_data_e = "e"
@@ -1562,7 +2342,7 @@ class Application(ttk.Frame):
 if __name__ == "__main__":
     global t2
     root = tk.Tk()
-    root.title("FRIENDS Serial Communication")
+    root.title("FRIENDS GUI")
     Application(master=root)
 
     root.mainloop()
