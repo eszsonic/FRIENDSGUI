@@ -20,8 +20,11 @@ import datetime as DT
 import time
 from tkinter import filedialog, Tk
 import pandas as pd
-
-
+import pdb
+# p: Print the value of a variable (e.g., p rows).
+# n: Execute the next line of code.
+# c: Continue execution until the next breakpoint.
+# q: Quit the debugger and stop the script.
 
 class Application(ttk.Frame):
     #variable to store time duration
@@ -2504,12 +2507,16 @@ class Application(ttk.Frame):
 
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
+                    #Plot puff temperature subplots only if data is available
+                    if non_zero_values3 and non_zero_values31:
+                        min_matrix3 = min(non_zero_values3)
+                        min_matrix31 = min(non_zero_values31)
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                        max_combined3 = max(max_matrix3, max_matrix31)
+                        min_combined3 = min(min_matrix3, min_matrix31)
 
-                    max_combined3 = max(max_matrix3, max_matrix31)
-                    min_combined3 = min(min_matrix3, min_matrix31)
+                        # Set y-axis limits for temperature subplots
+                        ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
 
                     max_matrix4 = max(time_matrix4)
                     max_matrix41 = max(time_matrix41)
@@ -2517,19 +2524,21 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    #Plot touch temperature subplots only if data is available
+                    if non_zero_values4 and non_zero_values41:
+                        min_matrix4 = min(non_zero_values4)  #if non_zero_values4 else 998
+                        min_matrix41 = min(non_zero_values41)  #if non_zero_values41 else 998
 
-                    max_combined4 = max(max_matrix4, max_matrix41)
-                    min_combined4 = min(min_matrix4, min_matrix41)
+                        max_combined4 = max(max_matrix4, max_matrix41)
+                        min_combined4 = min(min_matrix4, min_matrix41)
+
+                        # Set y-axis limits for temperature subplots
+                        ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
 
                     # Set y-axis labels and limits for temperature subplots
                     ax3.set_ylabel("Temp for puff")
-                    ax3.set_ylim(min_combined3 - 10, max_combined3 + 10)
                     ax3.legend()
-
                     ax4.set_ylabel("Temp for touch")
-                    ax4.set_ylim(min_combined4 - 10, max_combined4 + 10)
                     ax4.legend()
                     # Adjust layout and display the plots
                     plt.tight_layout()
@@ -2598,3 +2607,7 @@ if __name__ == "__main__":
     Application(master=root)
 
     root.mainloop()
+
+#%%
+
+#%%
