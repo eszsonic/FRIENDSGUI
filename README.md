@@ -1,4 +1,3 @@
-
 # FRIENDS GUI
 
 FRIENDS (Flexible Robust Instrumentation of Electronic Nicotine Delivery Systems) GUI is created using the Tkinter toolkit in Python to monitor the vaping behaviour of ENDS users. The software establishes serial communication between a hardware sensor-based FRIENDS device and a computer, and also offers users the flexibility to control parameters for data collection, extraction, conversion into a human-readable format, and visualization of vaping metrics such as puff frequency and duration over an entire day for better interpretation.
@@ -138,5 +137,6 @@ Answer:
 #### Is it required to install python programming language to use this software?
 
 Answer: Yes, you need to have Python installed on your computer, preferably version 3.11. Please check the [Python installation process](https://www.geeksforgeeks.org/how-to-install-python-on-windows/).
+
 
 
