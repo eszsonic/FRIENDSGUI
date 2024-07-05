@@ -986,8 +986,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3 =0
+                    if len(non_zero_values31) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -998,8 +1004,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                        min_matrix4 = min(non_zero_values4)
+                    else:
+                        min_matrix4 = 0
+                    if len(non_zero_values41) != 0:
+                        min_matrix41 = min(non_zero_values41)
+                    else:
+                        min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -1015,7 +1027,7 @@ class Application(ttk.Frame):
 
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
 
                 # Return the created subplots
                 return ax1, ax3, ax2, ax4
@@ -1235,8 +1247,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3 =0
+                    if len(non_zero_values31) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -1247,8 +1265,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                        min_matrix4 = min(non_zero_values4)
+                    else:
+                        min_matrix4 = 0
+                    if len(non_zero_values41) != 0:
+                        min_matrix41 = min(non_zero_values41)
+                    else:
+                        min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -1263,7 +1287,7 @@ class Application(ttk.Frame):
                     ax4.legend()
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
                 # Return the created subplots
                 return ax1,ax3,ax2,ax4
 
@@ -1467,8 +1491,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3 =0
+                    if len(non_zero_values31) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -1479,8 +1509,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                        min_matrix4 = min(non_zero_values4)
+                    else:
+                        min_matrix4 = 0
+                    if len(non_zero_values41) != 0:
+                        min_matrix41 = min(non_zero_values41)
+                    else:
+                        min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -1496,7 +1532,7 @@ class Application(ttk.Frame):
 
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
 
                 # Return the created subplots
                 return ax1, ax3, ax2, ax4
@@ -2037,8 +2073,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3 =0
+                    if len(non_zero_values31) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -2049,8 +2091,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                        min_matrix4 = min(non_zero_values4)
+                    else:
+                        min_matrix4 = 0
+                    if len(non_zero_values41) != 0:
+                        min_matrix41 = min(non_zero_values41)
+                    else:
+                        min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -2066,7 +2114,7 @@ class Application(ttk.Frame):
 
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
 
 
                 return ax1, ax3, ax2, ax4
@@ -2274,8 +2322,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3 =0
+                    if len(non_zero_values31) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -2286,8 +2340,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                        min_matrix4 = min(non_zero_values4)
+                    else:
+                        min_matrix4 = 0
+                    if len(non_zero_values41) != 0:
+                        min_matrix41 = min(non_zero_values41)
+                    else:
+                        min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -2302,7 +2362,7 @@ class Application(ttk.Frame):
                     ax4.legend()
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
 
                 # Return the created subplots
                 return ax1, ax3, ax2, ax4
@@ -2505,8 +2565,14 @@ class Application(ttk.Frame):
                     non_zero_values3 = [x for x in time_matrix3 if x != 0]
                     non_zero_values31 = [x for x in time_matrix31 if x != 0]
 
-                    min_matrix3 = min(non_zero_values3)
-                    min_matrix31 = min(non_zero_values31)
+                    if len(non_zero_values3) != 0:
+                        min_matrix3 = min(non_zero_values3)
+                    else:
+                        min_matrix3=0
+                    if len(non_zero_values3) != 0:
+                        min_matrix31 = min(non_zero_values31)
+                    else:
+                        min_matrix31=0
 
                     max_combined3 = max(max_matrix3, max_matrix31)
                     min_combined3 = min(min_matrix3, min_matrix31)
@@ -2517,8 +2583,14 @@ class Application(ttk.Frame):
                     non_zero_values4 = [x for x in time_matrix4 if x != 0]
                     non_zero_values41 = [x for x in time_matrix41 if x != 0]
 
-                    min_matrix4 = min(non_zero_values4)
-                    min_matrix41 = min(non_zero_values41)
+                    if len(non_zero_values4) != 0:
+                       min_matrix4 = min(non_zero_values4)
+                    else:
+                       min_matrix4=0
+                    if len(non_zero_values41) != 0:
+                       min_matrix41 = min(non_zero_values41)
+                    else:
+                       min_matrix41=0
 
                     max_combined4 = max(max_matrix4, max_matrix41)
                     min_combined4 = min(min_matrix4, min_matrix41)
@@ -2533,7 +2605,7 @@ class Application(ttk.Frame):
                     ax4.legend()
                     # Adjust layout and display the plots
                     plt.tight_layout()
-                    plt.show()
+                    plt.show(block=False)
 
                 # Return the created subplots
                 return ax1, ax3, ax2, ax4
