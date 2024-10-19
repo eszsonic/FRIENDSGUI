@@ -390,8 +390,8 @@ class Application(ttk.Frame):
         unix_timestamp = (DT.datetime.timestamp(current_time))
         frac, whole = math.modf(unix_timestamp)
         # Convert integer and fractional parts of UNIX timestamp to hexadecimal
-        unix_1 = hex(int(str(whole)[0:-2]))[2:]
-        unix_2 = hex(int(str(frac)[2:]))[2:]
+        unix_1 = hex(int(whole))[2:] #unix_1 = hex(int(str(whole)[0:-2]))[2:]
+        unix_2 = hex(int(frac * 1_000_000))[2:] #unix_2 = hex(int(str(frac)[2:]))[2:]
 
         #send message to the device for setting time in it
         _send_data_sdc2 = "s" + str(unix_1) + str(unix_2)
@@ -515,10 +515,64 @@ class Application(ttk.Frame):
                               minutes.map("{:02d}".format) + ':' + \
                               seconds
             return df
+        ############################################### Edit started ##############################################################
+        def clean_invalid_time_rows(df):
+            to_drop = []
+
+            for index, row in df[df['Time'] == "Invalid Time Format"].iterrows():
+                event = row['Event']
+                if event in ["PUFF_ON", "TOUCH_ON", "TEMPERATURE_ON"]:
+                    to_drop.extend([index, index + 1] if index + 1 in df.index else [index])
+                elif event in ["PUFF_OFF", "TOUCH_OFF", "TEMPERATURE_OFF"]:
+                    to_drop.extend([index - 1, index] if index - 1 in df.index else [index])
+
+            return df.drop(to_drop).reset_index(drop=True)
+        def replace_scientific_notation(time_str):
+            # Find the position of the last colon
+            colon_index = time_str.rfind(':')
+
+            # If there's no colon, or if the scientific notation check is not needed, return the original string
+            if colon_index == -1:
+                return time_str
+
+            # Extract the part from the colon to the end of the string
+            part_after_colon = time_str[colon_index+1:]
+
+            # Check if 'e' is present in the part after the colon
+            if 'e' in part_after_colon or 'E' in part_after_colon:
+                try:
+                    # Convert the part after the colon from scientific notation to decimal
+                    decimal_value = float(part_after_colon)
+                    # Format the decimal value into a string with 6 decimal places
+                    formatted_value = "{:.6f}".format(decimal_value)
+                    # Replace the scientific notation part in the original string
+                    new_time_str = time_str[:colon_index+1] + formatted_value
+                    return new_time_str
+                except ValueError as e:
+                    print(f"Error converting time string: {time_str} - {e}")
+                    return time_str
+            else:
+                # If no scientific notation is found, return the original string
+                return time_str
+        ############################################### Edit Ended ##############################################################
 
         def time_to_seconds_subseconds(time_str):
             # Convert the time string to a datetime object
+
+            ############################################### Edit started ##############################################################
+            # time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            #
+            # # Check if 'e' or 'E' is present in the time string
+            if 'e' in time_str or 'E' in time_str:
+                # Print the problematic time string and stop the execution
+                print(f"Encountered invalid time string with 'e': {time_str}")
+                time_str = replace_scientific_notation(time_str)
+                print(f"Modified time string: {time_str}")
+                # raise ValueError(f"Invalid time string: {time_str} contains 'e' which cannot be processed.")
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            ########################################### Edit Ended ##############################################################
+
 
             # Extract the hours, minutes, seconds, and microseconds
             hours = time_obj.hour
@@ -533,7 +587,21 @@ class Application(ttk.Frame):
 
         def round_to_nearest_second(time_str):
             # Parse the input time string to a datetime object
+
+            ############################################### Edit started ##############################################################
+            # time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            #
+            # # Check if 'e' or 'E' is present in the time string
+            if 'e' in time_str or 'E' in time_str:
+                # Print the problematic time string and stop the execution
+                print(f"Encountered invalid time string with 'e': {time_str}")
+                time_str = replace_scientific_notation(time_str)
+                print(f"Modified time string: {time_str}")
+                # raise ValueError(f"Invalid time string: {time_str} contains 'e' which cannot be processed.")
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            ########################################### Edit Ended ##############################################################
+
 
             # Calculate the microsecond fraction and the rounded microsecond value
             microsecond_fraction = time_obj.microsecond / 1000000.0
@@ -611,6 +679,8 @@ class Application(ttk.Frame):
                     timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                     for hexstamp in timestamp_hex.split():
                         gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                        # gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16) // 16**4)) \
+                        #            + DT.timedelta(microseconds=int(hexstamp, 16) % 16**4)
                         local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
                             # Event separation
                     # Determine the event type based on the first character of line2
@@ -735,11 +805,20 @@ class Application(ttk.Frame):
 
             df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x) # Convert 'Temperature' column to 0 if it cannot be converted to datetime
             df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+            ################################################### Edit Started ##############################################################
+            # Drop rows where 'Time' contains "Invalid Time Format"
+            df2_new_temp = clean_invalid_time_rows(df2_new_temp)
+            ################################################### Edit Ended ##############################################################
+
             df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second) # Round 'Time' values to the nearest second
             df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds) # Convert 'Time_round' values to seconds
 
 
             df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
+            ################################################### Edit Started ##############################################################
+            # Drop rows where 'Time' contains "Invalid Time Format"
+            df2 = clean_invalid_time_rows(df2)
+            ################################################### Edit Ended ##############################################################
 
             df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"]) #initialize dataframe for generating event information file
 
@@ -1582,10 +1661,63 @@ class Application(ttk.Frame):
                               minutes.map("{:02d}".format) + ':' + \
                               seconds
             return df
+############################################### Edit started ##############################################################
+
+        def clean_invalid_time_rows(df):
+            to_drop = []
+
+            for index, row in df[df['Time'] == "Invalid Time Format"].iterrows():
+                event = row['Event']
+                if event in ["PUFF_ON", "TOUCH_ON", "TEMPERATURE_ON"]:
+                    to_drop.extend([index, index + 1] if index + 1 in df.index else [index])
+                elif event in ["PUFF_OFF", "TOUCH_OFF", "TEMPERATURE_OFF"]:
+                    to_drop.extend([index - 1, index] if index - 1 in df.index else [index])
+
+            return df.drop(to_drop).reset_index(drop=True)
+        def replace_scientific_notation(time_str):
+            # Find the position of the last colon
+            colon_index = time_str.rfind(':')
+
+            # If there's no colon, or if the scientific notation check is not needed, return the original string
+            if colon_index == -1:
+                return time_str
+
+            # Extract the part from the colon to the end of the string
+            part_after_colon = time_str[colon_index+1:]
+
+            # Check if 'e' is present in the part after the colon
+            if 'e' in part_after_colon or 'E' in part_after_colon:
+                try:
+                    # Convert the part after the colon from scientific notation to decimal
+                    decimal_value = float(part_after_colon)
+                    # Format the decimal value into a string with 6 decimal places
+                    formatted_value = "{:.6f}".format(decimal_value)
+                    # Replace the scientific notation part in the original string
+                    new_time_str = time_str[:colon_index+1] + formatted_value
+                    return new_time_str
+                except ValueError as e:
+                    print(f"Error converting time string: {time_str} - {e}")
+                    return time_str
+            else:
+                # If no scientific notation is found, return the original string
+                return time_str
+############################################### Edit Ended ##############################################################
 
         def time_to_seconds_subseconds(time_str):
             # Convert the time string to a datetime object
+            # time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+############################################### Edit started ##############################################################
+
+            # # Check if 'e' or 'E' is present in the time string
+            if 'e' in time_str or 'E' in time_str:
+                # Print the problematic time string and stop the execution
+                print(f"Encountered invalid time string with 'e': {time_str}")
+                time_str = replace_scientific_notation(time_str)
+                print(f"Modified time string: {time_str}")
+                # raise ValueError(f"Invalid time string: {time_str} contains 'e' which cannot be processed.")
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+########################################### Edit Ended ##############################################################
 
             # Extract the hours, minutes, seconds, and microseconds
             hours = time_obj.hour
@@ -1600,7 +1732,20 @@ class Application(ttk.Frame):
 
         def round_to_nearest_second(time_str):
             # Parse the input time string to a datetime object
+
+            ############################################### Edit started ##############################################################
+            # time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            #
+            # # Check if 'e' or 'E' is present in the time string
+            if 'e' in time_str or 'E' in time_str:
+                # Print the problematic time string and stop the execution
+                print(f"Encountered invalid time string with 'e': {time_str}")
+                time_str = replace_scientific_notation(time_str)
+                print(f"Modified time string: {time_str}")
+                # raise ValueError(f"Invalid time string: {time_str} contains 'e' which cannot be processed.")
+
             time_obj = datetime.strptime(time_str, "%H:%M:%S.%f")
+            ########################################### Edit Ended ##############################################################
 
             # Calculate the microsecond fraction and the rounded microsecond value
             microsecond_fraction = time_obj.microsecond / 1000000.0
@@ -1654,7 +1799,7 @@ class Application(ttk.Frame):
 
         for index, row in df.iterrows():
             # Extract the last 16 characters of the line
-            line= str(row[0])
+            line = str(row[0])
             line2 = line[-16:]
             # Count the number of characters before the last 16 characters
             count_before_16 = 0
@@ -1662,13 +1807,24 @@ class Application(ttk.Frame):
             for char in line[:-16]:
                 if char.isdigit() or (char.isalpha() and char.isupper()):
                     count_before_16 += 1
-            if count_before_16 == 0 and line2[0] in "123456EF":  ## if there is no character before last 16 characters and if the 1st character of last 16 characters starts with "123456EF", consider the timestamp as a valid timestamp
+            # if there is no character before last 16 characters and if the 1st character of last 16 characters starts
+            # with "123456EF", consider the timestamp as a valid timestamp
+            if count_before_16 == 0 and line2[0] in "123456EF":
                 timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                 for hexstamp in timestamp_hex.split():
-                    gmt_time = DT.datetime.utcfromtimestamp(
-                        float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                    gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+
                     local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
-                # Determine the event type based on the first character of line2
+
+################################################### Edit Started ##############################################################
+                    # if 'e' in str(gmt_time):
+                    #     # Print the problematic time string and stop the execution
+                    #     print(f"Encountered invalid time string with 'e' in gmt_time: {gmt_time} and timestamp_hex {timestamp_hex}")
+                    #
+                    # if 'e' in str(local_time):
+                    #     # Print the problematic time string and stop the execution
+                    #     print(f"Encountered invalid time string with 'e' in local_time: {local_time} and timestamp_hex {timestamp_hex}")
+########################################### Edit Ended ##############################################################                # Determine the event type based on the first character of line2
                 if (line2[0] == "1"):
                     event = "PUFF_ON" + " " + str(local_time)
                 elif (line2[0] == "2"):
@@ -1700,7 +1856,7 @@ class Application(ttk.Frame):
         #f2.write(str(tm) + "\n")
         #df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
         df2_new_temp = df2.copy()
-        df3=df2.copy()
+        df3 = df2.copy()
 
         df3["Timestamps:"] = df3["Timestamps:"].apply(lambda x: add_comma_if_words(x))  # Add comma after specific words in "Timestamps:" column
         df3[["Event", "Information"]] = df3["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", "))) # Split "Timestamps:" column into "Event" and "Information" columns
@@ -1715,6 +1871,7 @@ class Application(ttk.Frame):
         df2["Time"] = df2['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True) # Replace date format in 'Time' column
         df2[["Date", "Time"]] = df2["Time"].apply(lambda x: pd.Series(str(x).split(", "))) # Split 'Time' column into 'Date' and 'Time' columns
         format_time_column(df2, "Time")
+
         df2["Time_subseconds"] = df2['Time'].apply(time_to_seconds_subseconds) # Convert 'Time' to seconds and subsecond
 
         def format_time(input_time):
@@ -1797,11 +1954,21 @@ class Application(ttk.Frame):
                 df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
         df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x)
         df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+        ################################################### Edit Started ##############################################################
+        # Drop rows where 'Time' contains "Invalid Time Format"
+        df2_new_temp = clean_invalid_time_rows(df2_new_temp)
+        ################################################### Edit Ended ##############################################################
+
         df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second) # Round 'Time' values to the nearest second
         df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds) # Convert 'Time_round' values to seconds
 
 
         df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
+        ################################################### Edit Started ##############################################################
+        # Drop rows where 'Time' contains "Invalid Time Format"
+        df2 = clean_invalid_time_rows(df2)
+        ################################################### Edit Ended ##############################################################
+
         df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
         duration = 0
 
@@ -2416,6 +2583,7 @@ class Application(ttk.Frame):
                     string4 = 'TOUCH_OFF'
                     string5 = 'TEMPERATURE_ON'
                     string6 = 'TEMPERATURE_OFF'
+
                     # Iterate over each row in the filtered DataFrame
                     for index, row in rows.iterrows():
                         # Check if the current row and the next row form a PUFF event
@@ -2642,9 +2810,10 @@ class Application(ttk.Frame):
         # Separate the integer and fractional parts of the Unix timestamp
         frac, whole = math.modf(unix_timestamp)
         # Convert the integer part to hexadecimal and extract the relevant portion
-        unix_1 = hex(int(str(whole)[0:-2]))[2:]
+        unix_1 = hex(int(whole))[2:]  # unix_1 = hex(int(str(whole)[0:-2]))[2:]
+
         # Convert the fractional part to hexadecimal and extract the relevant portion
-        unix_2 = hex(int(str(frac)[2:]))[2:]
+        unix_2 = hex(int(frac * 1_000_000))[2:]  # unix_2 = hex(int(str(frac)[2:]))[2:]
         # Construct the data to be sent ('s' + first part of Unix timestamp + second part of Unix timestamp)
         _send_data_s = "s" + str(unix_1) + str(unix_2)
         # Encode the data and send it to the serial port
@@ -2670,3 +2839,11 @@ if __name__ == "__main__":
     Application(master=root)
 
     root.mainloop()
+
+#%%
+
+#%%
+
+#%%
+
+#%%
