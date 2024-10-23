@@ -20,6 +20,7 @@ import datetime as DT
 import time
 from tkinter import filedialog, Tk
 import pandas as pd
+import re
 
 
 
@@ -622,7 +623,7 @@ class Application(ttk.Frame):
                 #line2=line2[15:31]
                 # Extract the last 16 characters of the line
                 line = str(row[0])
-                line2 = line.replace(" ", "")
+                line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
                 if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
                     timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                     for hexstamp in timestamp_hex.split():
@@ -1603,7 +1604,7 @@ class Application(ttk.Frame):
             #seconds = time_parts[2].astype(float).round(10).astype(str)
             # Convert seconds to float, round to 10 decimal places, and prevent scientific notation
             seconds = time_parts[2].astype(float).apply(lambda x: f"{x:.6f}")
-        ############################################### Edit started ##############################################################
+        ############################################### Edit ended ##############################################################
 
             # Format the seconds column
             seconds = seconds.apply(lambda s: s if '.' in s else s + '.00')
@@ -1627,25 +1628,25 @@ class Application(ttk.Frame):
 
             return df.drop(to_drop).reset_index(drop=True)
 
-        def check_for_e_in_column(df_column, input_integer):
-            # Iterate through each row in the specified DataFrame column
-            for index, value in df_column.iteritems():
-                # Check if 'e' or 'E' is present in the string
-                if 'e' in str(value) in str(value):
-                    # Print the index where 'e' was found
-                    print(f"'e' found in row index: {index}")
-
-                    # Print the entire row where 'e' was found
-                    # print(f"Row: {df_column.iloc[index]}")
-
-                    # Print the integer that was passed as input
-                    print(f"Case Location: {input_integer}")
-
-                    # Stop execution and return "e found"
-                    return index
-
-            # If 'e' was not found in any string, return no 'e' found
-            return "No e was found"
+        # def check_for_e_in_column(df_column, input_integer):
+        #     # Iterate through each row in the specified DataFrame column
+        #     for index, value in df_column.iteritems():
+        #         # Check if 'e' or 'E' is present in the string
+        #         if 'e' in str(value) in str(value):
+        #             # Print the index where 'e' was found
+        #             print(f"'e' found in row index: {index}")
+        #
+        #             # Print the entire row where 'e' was found
+        #             # print(f"Row: {df_column.iloc[index]}")
+        #
+        #             # Print the integer that was passed as input
+        #             print(f"Case Location: {input_integer}")
+        #
+        #             # Stop execution and return "e found"
+        #             return index
+        #
+        #     # If 'e' was not found in any string, return no 'e' found
+        #     return "No e was found"
 
 ############################################### Edit Ended ##############################################################
 
@@ -1720,7 +1721,7 @@ class Application(ttk.Frame):
         for index, row in df.iterrows():
             # Extract the last 16 characters of the line
             line = str(row[0])
-            line2 = line.replace(" ", "")
+            line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
             if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
                 timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                 for hexstamp in timestamp_hex.split():
