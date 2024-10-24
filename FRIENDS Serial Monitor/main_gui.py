@@ -20,6 +20,7 @@ import datetime as DT
 import time
 from tkinter import filedialog, Tk
 import pandas as pd
+import re
 
 
 
@@ -390,8 +391,8 @@ class Application(ttk.Frame):
         unix_timestamp = (DT.datetime.timestamp(current_time))
         frac, whole = math.modf(unix_timestamp)
         # Convert integer and fractional parts of UNIX timestamp to hexadecimal
-        unix_1 = hex(int(str(whole)[0:-2]))[2:]
-        unix_2 = hex(int(str(frac)[2:]))[2:]
+        unix_1 = hex(int(whole))[2:] #unix_1 = hex(int(str(whole)[0:-2]))[2:]
+        unix_2 = hex(int(frac * 1_000_000))[2:] #unix_2 = hex(int(str(frac)[2:]))[2:]
 
         #send message to the device for setting time in it
         _send_data_sdc2 = "s" + str(unix_1) + str(unix_2)
@@ -505,7 +506,12 @@ class Application(ttk.Frame):
             time_parts = df[column_name].str.split(':', expand=True)
             hours = time_parts[0].astype(int)
             minutes = time_parts[1].astype(int)
-            seconds = time_parts[2].astype(float).round(10).astype(str)
+            ############################################### Edit started ##############################################################
+            #seconds = time_parts[2].astype(float).round(10).astype(str)
+            # Convert seconds to float, round to 10 decimal places, and prevent scientific notation
+            seconds = time_parts[2].astype(float).apply(lambda x: f"{x:.6f}")
+            ############################################### Edit started ##############################################################
+
 
             # Format the seconds column
             seconds = seconds.apply(lambda s: s if '.' in s else s + '.00')
@@ -515,6 +521,22 @@ class Application(ttk.Frame):
                               minutes.map("{:02d}".format) + ':' + \
                               seconds
             return df
+        ############################################### Edit started ##############################################################
+
+        def clean_invalid_time_rows(df):
+
+            to_drop = []
+
+            for index, row in df[df['Time'] == "Invalid Time Format"].iterrows():
+                event = row['Event']
+                if event in ["PUFF_ON", "TOUCH_ON", "TEMPERATURE_ON"]:
+                    to_drop.extend([index, index + 1] if index + 1 in df.index else [index])
+                elif event in ["PUFF_OFF", "TOUCH_OFF", "TEMPERATURE_OFF"]:
+                    to_drop.extend([index - 1, index] if index - 1 in df.index else [index])
+
+            return df.drop(to_drop).reset_index(drop=True)
+
+        ############################################### Edit Ended ##############################################################
 
         def time_to_seconds_subseconds(time_str):
             # Convert the time string to a datetime object
@@ -595,35 +617,32 @@ class Application(ttk.Frame):
             # Write local time to the file
             f2.write(str("Local Time: " + str(current_time) + "\n"))
             # List of prefixes indicating different types of events
-            prefix = [1, 2, 3, 4, 5, 6, "E", "F"]
+            valid_prefixes = {"1", "2", "3", "4", "5", "6", "E", "F"}
             for index, row in df.iterrows():
                 #line2= str(row)
                 #line2=line2[15:31]
                 # Extract the last 16 characters of the line
                 line = str(row[0])
-                line2 = line[-16:]
-                # Count the number of characters before the last 16 characters
-                count_before_16 = 0
-                for char in line[:-16]:
-                    if char.isdigit() or (char.isalpha() and char.isupper()):
-                       count_before_16 += 1
-                if count_before_16 == 0 and line2[0] in "123456EF": ## if there is no character before last 16 characters and if the 1st character of last 16 characters starts with "123456EF", consider the timestamp as a valid timestamp
+                line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
+                if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
                     timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                     for hexstamp in timestamp_hex.split():
                         gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                        # gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16) // 16**4)) \
+                        #            + DT.timedelta(microseconds=int(hexstamp, 16) % 16**4)
                         local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
                             # Event separation
                     # Determine the event type based on the first character of line2
                     if (line2[0] == "1"):
-                        event = "PUFF_ON" + " " + str(local_time)
+                        event = "PUFF_ON" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time) #isoformat
                     elif (line2[0] == "2"):
-                        event = "PUFF_OFF" + " " + str(local_time)
+                        event = "PUFF_OFF" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                     elif (line2[0] == "3"):
-                        event = "TOUCH_ON" + " " + str(local_time)
+                        event = "TOUCH_ON" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                     elif (line2[0] == "4"):
-                        event = "TOUCH_OFF" + " " + str(local_time)
+                        event = "TOUCH_OFF" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                     elif (line2[0] == "5"):
-                        hex_number=str(line2[4:16])
+                        hex_number = str(line2[4:16])
                         decimal_number = int(hex_number, 16)
                         event = "TEMPERATURE_ON" + " " + str(decimal_number)
                     elif (line2[0] == "6"):
@@ -631,9 +650,9 @@ class Application(ttk.Frame):
                         decimal_number = int(hex_number, 16)
                         event = "TEMPERATURE_OFF" + " " + str(decimal_number)
                     elif (line2[0] == "E"):
-                        event = "READ_TIME" + " " + str(local_time)
+                        event = "READ_TIME" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                     elif (line2[0] == "F"):
-                        event = "SET_TIME" + " " + str(local_time)
+                        event = "SET_TIME" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                     else:
                         event = "Time"
                         print("issue")
@@ -735,11 +754,20 @@ class Application(ttk.Frame):
 
             df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x) # Convert 'Temperature' column to 0 if it cannot be converted to datetime
             df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+            ################################################### Edit Started ##############################################################
+            # Drop rows where 'Time' contains "Invalid Time Format"
+            df2_new_temp = clean_invalid_time_rows(df2_new_temp)
+            ################################################### Edit Ended ##############################################################
+
             df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second) # Round 'Time' values to the nearest second
             df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds) # Convert 'Time_round' values to seconds
 
 
             df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
+            ################################################### Edit Started ##############################################################
+            # Drop rows where 'Time' contains "Invalid Time Format"
+            df2 = clean_invalid_time_rows(df2)
+            ################################################### Edit Ended ##############################################################
 
             df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"]) #initialize dataframe for generating event information file
 
@@ -1572,7 +1600,11 @@ class Application(ttk.Frame):
 
             hours = time_parts[0].astype(int)
             minutes = time_parts[1].astype(int)
-            seconds = time_parts[2].astype(float).round(10).astype(str)
+        ############################################### Edit started ##############################################################
+            #seconds = time_parts[2].astype(float).round(10).astype(str)
+            # Convert seconds to float, round to 10 decimal places, and prevent scientific notation
+            seconds = time_parts[2].astype(float).apply(lambda x: f"{x:.6f}")
+        ############################################### Edit ended ##############################################################
 
             # Format the seconds column
             seconds = seconds.apply(lambda s: s if '.' in s else s + '.00')
@@ -1582,6 +1614,41 @@ class Application(ttk.Frame):
                               minutes.map("{:02d}".format) + ':' + \
                               seconds
             return df
+############################################### Edit started ##############################################################
+
+        def clean_invalid_time_rows(df):
+            to_drop = []
+
+            for index, row in df[df['Time'] == "Invalid Time Format"].iterrows():
+                event = row['Event']
+                if event in ["PUFF_ON", "TOUCH_ON", "TEMPERATURE_ON"]:
+                    to_drop.extend([index, index + 1] if index + 1 in df.index else [index])
+                elif event in ["PUFF_OFF", "TOUCH_OFF", "TEMPERATURE_OFF"]:
+                    to_drop.extend([index - 1, index] if index - 1 in df.index else [index])
+
+            return df.drop(to_drop).reset_index(drop=True)
+
+        # def check_for_e_in_column(df_column, input_integer):
+        #     # Iterate through each row in the specified DataFrame column
+        #     for index, value in df_column.iteritems():
+        #         # Check if 'e' or 'E' is present in the string
+        #         if 'e' in str(value) in str(value):
+        #             # Print the index where 'e' was found
+        #             print(f"'e' found in row index: {index}")
+        #
+        #             # Print the entire row where 'e' was found
+        #             # print(f"Row: {df_column.iloc[index]}")
+        #
+        #             # Print the integer that was passed as input
+        #             print(f"Case Location: {input_integer}")
+        #
+        #             # Stop execution and return "e found"
+        #             return index
+        #
+        #     # If 'e' was not found in any string, return no 'e' found
+        #     return "No e was found"
+
+############################################### Edit Ended ##############################################################
 
         def time_to_seconds_subseconds(time_str):
             # Convert the time string to a datetime object
@@ -1650,33 +1717,25 @@ class Application(ttk.Frame):
         df = df.drop(df.index[:2])
         df = df.reset_index(drop=True)
         # List of prefixes indicating different types of events
-        prefix = [1, 2, 3, 4, 5, 6, "E", "F"]
-
+        valid_prefixes = {"1", "2", "3", "4", "5", "6", "E", "F"}
         for index, row in df.iterrows():
             # Extract the last 16 characters of the line
-            line= str(row[0])
-            line2 = line[-16:]
-            # Count the number of characters before the last 16 characters
-            count_before_16 = 0
-            #line2=line2[15:31]
-            for char in line[:-16]:
-                if char.isdigit() or (char.isalpha() and char.isupper()):
-                    count_before_16 += 1
-            if count_before_16 == 0 and line2[0] in "123456EF":  ## if there is no character before last 16 characters and if the 1st character of last 16 characters starts with "123456EF", consider the timestamp as a valid timestamp
+            line = str(row[0])
+            line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
+            if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
                 timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
                 for hexstamp in timestamp_hex.split():
-                    gmt_time = DT.datetime.utcfromtimestamp(
-                        float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                    gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
                     local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
-                # Determine the event type based on the first character of line2
+
                 if (line2[0] == "1"):
-                    event = "PUFF_ON" + " " + str(local_time)
+                    event = "PUFF_ON" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 elif (line2[0] == "2"):
-                    event = "PUFF_OFF" + " " + str(local_time)
+                    event = "PUFF_OFF" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 elif (line2[0] == "3"):
-                    event = "TOUCH_ON" + " " + str(local_time)
+                    event = "TOUCH_ON" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 elif (line2[0] == "4"):
-                    event = "TOUCH_OFF" + " " + str(local_time)
+                    event = "TOUCH_OFF" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 elif (line2[0] == "5"):
                     hex_number = str(line2[4:16])
                     decimal_number = int(hex_number, 16)
@@ -1686,9 +1745,9 @@ class Application(ttk.Frame):
                     decimal_number = int(hex_number, 16)
                     event = "TEMPERATURE_OFF" + " " + str(decimal_number)
                 elif (line2[0] == "E"):
-                    event = "READ_TIME" + " " + str(local_time)
+                    event = "READ_TIME" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 elif (line2[0] == "F"):
-                    event = "SET_TIME" + " " + str(local_time)
+                    event = "SET_TIME" + " " + local_time.strftime("%Y-%m-%d %H:%M:%S.%f") #str(local_time)
                 else:
                     event = "Time"
                     print("issue")
@@ -1700,7 +1759,7 @@ class Application(ttk.Frame):
         #f2.write(str(tm) + "\n")
         #df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
         df2_new_temp = df2.copy()
-        df3=df2.copy()
+        df3 = df2.copy()
 
         df3["Timestamps:"] = df3["Timestamps:"].apply(lambda x: add_comma_if_words(x))  # Add comma after specific words in "Timestamps:" column
         df3[["Event", "Information"]] = df3["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", "))) # Split "Timestamps:" column into "Event" and "Information" columns
@@ -1715,6 +1774,12 @@ class Application(ttk.Frame):
         df2["Time"] = df2['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True) # Replace date format in 'Time' column
         df2[["Date", "Time"]] = df2["Time"].apply(lambda x: pd.Series(str(x).split(", "))) # Split 'Time' column into 'Date' and 'Time' columns
         format_time_column(df2, "Time")
+
+        # Check for e in time
+        # result = check_for_e_in_column(df2['Time'], 7)
+        # if isinstance(result, int):
+        #     print(df2[result])
+
         df2["Time_subseconds"] = df2['Time'].apply(time_to_seconds_subseconds) # Convert 'Time' to seconds and subsecond
 
         def format_time(input_time):
@@ -1743,7 +1808,7 @@ class Application(ttk.Frame):
         rows_to_delete = []
         for index, row in df2_new_temp.iterrows():
 
-            if row['Event'] == 'UNEXPECTED_TIMESTAMP':
+            if row['Event'] == "UNEXPECTED_TIMESTAMP":
                 # Check previous row for related event types
 
                 if index > 0:
@@ -1797,11 +1862,16 @@ class Application(ttk.Frame):
                 df2_new_temp.at[index, 'Date'] = df2_new_temp.at[index - 2, 'Date']
         df2_new_temp['Temperature'] = df2_new_temp['Temperature'].apply(lambda x: 0 if pd.to_datetime(x, errors='coerce') is not pd.NaT else x)
         df2_new_temp['Time'] = df2_new_temp['Time'].apply(lambda x: format_time(x))
+        # Drop rows where 'Time' contains "Invalid Time Format"
+        df2_new_temp = clean_invalid_time_rows(df2_new_temp)
+
         df2_new_temp["Time_round"] = df2_new_temp['Time'].apply(round_to_nearest_second) # Round 'Time' values to the nearest second
         df2_new_temp['Time_in_seconds'] = df2_new_temp['Time_round'].apply(convert_to_seconds) # Convert 'Time_round' values to seconds
 
-
         df2['Time'] = df2['Time'].apply(lambda x: format_time(x))
+        # Drop rows where 'Time' contains "Invalid Time Format"
+        df2 = clean_invalid_time_rows(df2)
+
         df_v2 = pd.DataFrame(data=[["0", "0", "0", "0"]], columns=["Event", "Date", "Range", "Duration_in_seconds"])
         duration = 0
 
@@ -2416,6 +2486,7 @@ class Application(ttk.Frame):
                     string4 = 'TOUCH_OFF'
                     string5 = 'TEMPERATURE_ON'
                     string6 = 'TEMPERATURE_OFF'
+
                     # Iterate over each row in the filtered DataFrame
                     for index, row in rows.iterrows():
                         # Check if the current row and the next row form a PUFF event
@@ -2642,9 +2713,10 @@ class Application(ttk.Frame):
         # Separate the integer and fractional parts of the Unix timestamp
         frac, whole = math.modf(unix_timestamp)
         # Convert the integer part to hexadecimal and extract the relevant portion
-        unix_1 = hex(int(str(whole)[0:-2]))[2:]
+        unix_1 = hex(int(whole))[2:]  # unix_1 = hex(int(str(whole)[0:-2]))[2:]
+
         # Convert the fractional part to hexadecimal and extract the relevant portion
-        unix_2 = hex(int(str(frac)[2:]))[2:]
+        unix_2 = hex(int(frac * 1_000_000))[2:]  # unix_2 = hex(int(str(frac)[2:]))[2:]
         # Construct the data to be sent ('s' + first part of Unix timestamp + second part of Unix timestamp)
         _send_data_s = "s" + str(unix_1) + str(unix_2)
         # Encode the data and send it to the serial port
@@ -2670,3 +2742,11 @@ if __name__ == "__main__":
     Application(master=root)
 
     root.mainloop()
+
+#%%
+
+#%%
+
+#%%
+
+#%%
