@@ -21,7 +21,7 @@ import time
 from tkinter import filedialog, Tk
 import pandas as pd
 import re
-
+import os
 
 
 class Application(ttk.Frame):
@@ -625,9 +625,10 @@ class Application(ttk.Frame):
                 line = str(row[0])
                 line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
                 if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
-                    timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
+                    timestamp_hex = line2[4:8] + line2[8:12]
+                    subsecond_hex = line2[12:16]
                     for hexstamp in timestamp_hex.split():
-                        gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                        gmt_time = DT.datetime.utcfromtimestamp(int(hexstamp, 16)) + DT.timedelta(seconds=(int(subsecond_hex, 16) / 65536))  # UNIX hex to GMT converter
                         # gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16) // 16**4)) \
                         #            + DT.timedelta(microseconds=int(hexstamp, 16) % 16**4)
                         local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
@@ -1614,7 +1615,7 @@ class Application(ttk.Frame):
                               minutes.map("{:02d}".format) + ':' + \
                               seconds
             return df
-############################################### Edit started ##############################################################
+        ############################################### Edit started ##############################################################
 
         def clean_invalid_time_rows(df):
             to_drop = []
@@ -1628,7 +1629,64 @@ class Application(ttk.Frame):
 
             return df.drop(to_drop).reset_index(drop=True)
 
-        # def check_for_e_in_column(df_column, input_integer):
+        def process_file(file_path):
+            try:
+                # Read the file content
+                with open(file_path, "r", encoding="utf-8") as file:
+                    lines = file.readlines()
+
+                # Find the index of "Timestamps:"
+                start_index = next((i for i, line in enumerate(lines) if "Timestamps:" in line), None)
+
+                if start_index is None:
+                    print("Error: 'Timestamps:' not found in the file.")
+                    return None
+
+                # Keep lines from "Timestamps:" onwards
+                filtered_lines = lines[start_index:]
+
+                # Construct new file name with "_temp"
+                base_name, ext = os.path.splitext(file_path)
+                new_file_path = f"{base_name}_temp{ext}"
+
+                # Write back the filtered content to the new file
+                with open(new_file_path, "w", encoding="utf-8") as file:
+                    file.writelines(filtered_lines)
+
+                print(f"File has been processed and saved as: {new_file_path}")
+
+                # Update file_path variable
+                return new_file_path
+
+            except FileNotFoundError:
+                print(f"Error: The file at '{file_path}' was not found.")
+                return None
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                return None
+
+        # def remove_lines_from_file(text_file_path):
+        #     try:
+        #         # Read the file content
+        #         with open(text_file_path, "r", encoding="utf-8") as file:
+        #             lines = file.readlines()
+        #
+        #         # Filter out lines starting with "Input Command:"
+        #         filtered_lines = [line for line in lines if not line.startswith("Input Command:")]
+        #
+        #         # Only rewrite the file if modifications were made
+        #         if len(filtered_lines) != len(lines):
+        #             with open(text_file_path, "w", encoding="utf-8") as file:
+        #                 file.writelines(filtered_lines)
+        #             print("Input Command line removed")
+        #         # else:
+        #         #     print("No changes were made; 'Input Command:' was not found.")
+        #
+        #     except FileNotFoundError:
+        #         print(f"Error: The file at '{text_file_path}' was not found.")
+
+
+# def check_for_e_in_column(df_column, input_integer):
         #     # Iterate through each row in the specified DataFrame column
         #     for index, value in df_column.iteritems():
         #         # Check if 'e' or 'E' is present in the string
@@ -1701,6 +1759,12 @@ class Application(ttk.Frame):
         #ask for a text file with original timestamps
         file_path = filedialog.askopenfilename(filetypes=[('Text Files', '*.txt')])
 
+        # remove any line starts with "Input Command"
+        # remove_lines_from_file(file_path)
+
+        # Remove all the lines before "timestamp:" and rename file_path variable to originalName_temp
+        file_path = process_file(file_path)
+
         ## convert the file into a dataframe
         df = pd.read_csv(file_path)
         ##create a new dataframe df2
@@ -1723,9 +1787,10 @@ class Application(ttk.Frame):
             line = str(row[0])
             line2 = re.sub(r"\s+", "", line)  # Remove all whitespace (spaces, tabs, newlines, etc.) line.replace(" ", "")
             if len(line2) == 16 and line2.isalnum() and (line2.isupper() or line2.isdigit()) and line2[0] in valid_prefixes:
-                timestamp_hex = line2[4:8] + line2[8:12] + line2[12:16]
+                timestamp_hex = line2[4:8] + line2[8:12]
+                subsecond_hex = line2[12:16]
                 for hexstamp in timestamp_hex.split():
-                    gmt_time = DT.datetime.utcfromtimestamp(float(int(hexstamp, 16)) / 16 ** 4)  # UNIX hex to GMT converter
+                    gmt_time = DT.datetime.utcfromtimestamp(int(hexstamp, 16)) + DT.timedelta(seconds=(int(subsecond_hex, 16) / 65536))  # UNIX hex to GMT converter
                     local_time = datetime_from_utc_to_local(gmt_time)  # GMT to local time converter
 
                 if (line2[0] == "1"):
@@ -1769,6 +1834,7 @@ class Application(ttk.Frame):
         df2 = df2[~df2['Timestamps:'].str.startswith('TEMP')]
         df2 = df2[~df2['Timestamps:'].str.startswith('UNEXPECTED')]
         df2["Timestamps:"] = df2["Timestamps:"].apply(lambda x: add_comma_if_words(x)) # Add commas after specific words in 'Timestamps:' column
+
         df2[["Event", "Time"]] = df2["Timestamps:"].apply(lambda x: pd.Series(str(x).split(", "))) # Split 'Timestamps:' column into 'Event' and 'Time' columns
         df2.drop("Timestamps:", axis=1, inplace=True)
         df2["Time"] = df2['Time'].str.replace(r'(\d{4}-\d{2}-\d{2})', r'\1,', regex=True) # Replace date format in 'Time' column
