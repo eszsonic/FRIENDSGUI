@@ -4,6 +4,7 @@ import tkinter.ttk as ttk
 from tkinter import filedialog
 from tkinter import *
 from tkinter.ttk import *
+from tkinter import messagebox
 import threading
 import math
 import matplotlib.pyplot as plt
@@ -1630,20 +1631,46 @@ class Application(ttk.Frame):
             return df.drop(to_drop).reset_index(drop=True)
 
         def process_file(file_path):
+            """
+            Reads a text file, removes all lines before the last occurrence of "Timestamps:",
+            and saves the result in a new file with '_temp' appended to the original name.
+
+            If multiple occurrences of "Timestamps:" are found, it alerts the user via a pop-up message
+            and stops execution. Otherwise, it proceeds to clean the file.
+
+            Args:
+                file_path (str): Path to the input text file.
+
+            Returns:
+                str or None: Path to the new file if processing is successful, else None.
+            """
             try:
                 # Read the file content
                 with open(file_path, "r", encoding="utf-8") as file:
                     lines = file.readlines()
 
-                # Find the index of "Timestamps:"
-                start_index = next((i for i, line in enumerate(lines) if "Timestamps:" in line), None)
+                # Find all occurrences of "Timestamps:"
+                timestamp_indices = [i for i, line in enumerate(lines) if "Timestamps:" in line]
 
-                if start_index is None:
+                if not timestamp_indices:
                     print("Error: 'Timestamps:' not found in the file.")
                     return None
 
-                # Keep lines from "Timestamps:" onwards
-                filtered_lines = lines[start_index:]
+                if len(timestamp_indices) > 1:
+                    # Create a pop-up alert for multiple "Timestamps:" occurrences
+                    root = tk.Tk()
+                    root.withdraw()  # Hide the main Tkinter window
+                    messagebox.showwarning(
+                        "Multiple Timestamps Detected",
+                        "The data was read and saved multiple times in the text file.\n"
+                        "Please remove unwanted/unnecessary data from the text file and read it again."
+                    )
+                    print("Execution stopped due to multiple 'Timestamps:' occurrences.")
+                    return None  # Stop execution and ask the user to clean the file
+
+                # If only one "Timestamps:" is found, proceed with cleaning
+                last_index = timestamp_indices[-1]
+                filtered_lines = lines[last_index:]
 
                 # Construct new file name with "_temp"
                 base_name, ext = os.path.splitext(file_path)
@@ -1664,27 +1691,6 @@ class Application(ttk.Frame):
             except Exception as e:
                 print(f"An error occurred: {e}")
                 return None
-
-        # def remove_lines_from_file(text_file_path):
-        #     try:
-        #         # Read the file content
-        #         with open(text_file_path, "r", encoding="utf-8") as file:
-        #             lines = file.readlines()
-        #
-        #         # Filter out lines starting with "Input Command:"
-        #         filtered_lines = [line for line in lines if not line.startswith("Input Command:")]
-        #
-        #         # Only rewrite the file if modifications were made
-        #         if len(filtered_lines) != len(lines):
-        #             with open(text_file_path, "w", encoding="utf-8") as file:
-        #                 file.writelines(filtered_lines)
-        #             print("Input Command line removed")
-        #         # else:
-        #         #     print("No changes were made; 'Input Command:' was not found.")
-        #
-        #     except FileNotFoundError:
-        #         print(f"Error: The file at '{text_file_path}' was not found.")
-
 
 # def check_for_e_in_column(df_column, input_integer):
         #     # Iterate through each row in the specified DataFrame column
@@ -1778,7 +1784,7 @@ class Application(ttk.Frame):
         
         df.columns=["Timestamps:"]
         #delete the headers
-        df = df.drop(df.index[:2])
+        df = df.drop(df.index[:0])
         df = df.reset_index(drop=True)
         # List of prefixes indicating different types of events
         valid_prefixes = {"1", "2", "3", "4", "5", "6", "E", "F"}
@@ -1901,13 +1907,15 @@ class Application(ttk.Frame):
             # Check if the current row's event is 'TEMPERATURE_ON' and the time is NaN
             if (row['Event'] == 'TEMPERATURE_ON') and pd.isna(row['Time']):
                 # Check if the time value two rows above the current row is not NaN
-                if not pd.isna(df2_new_temp.at[index - 2, 'Time']):
+                # if not pd.isna(df2_new_temp.at[index - 2, 'Time']):
+                if index >= 2 and not pd.isna(df2_new_temp.at[index - 2, 'Time']):
                     # If the condition is met, fill the NaN time with the time from two rows above
                     df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index - 2, 'Time']
             # Check if the current row's event is 'TEMPERATURE_OFF' and the time is NaN
             if (row['Event'] == 'TEMPERATURE_OFF') and pd.isna(row['Time']):
                 # Check if the time value two rows above the current row is not NaN
-                if not pd.isna(df2_new_temp.at[index - 2, 'Time']):
+                # if not pd.isna(df2_new_temp.at[index - 2, 'Time']):
+                if index >= 2 and not pd.isna(df2_new_temp.at[index - 2, 'Time']):
                     # If the condition is met, fill the NaN time with the time from two rows above
                     df2_new_temp.at[index, 'Time'] = df2_new_temp.at[index - 2, 'Time']
 
