@@ -24,6 +24,112 @@ import pandas as pd
 import re
 import os
 
+############################################### Edit Started ##############################################################
+
+PUFF_ON = 0x1000000000000000
+PUFF_OFF = 0x2000000000000000
+THERMISTOR_ON = 0x5000000000000000
+THERMISTOR_OFF = 0x6000000000000000
+
+TIME_THRESHOLD = int(4 * 65536)
+MIN_PUFF_DURATION = int(0.2 * 65536)
+MIN_TEMP_DIFF = 10
+MAX_PUFF_DURATION = int(8 * 65536)
+
+def parse_event(line):
+    match = re.match(r'([0-9A-F]{16})', line)
+    if match:
+        event = int(match.group(1), 16)
+        event_type = event & 0xF000000000000000
+        timestamp = event & 0x0FFFFFFFFFFFFFFF
+        return timestamp, event_type
+    return None, None
+
+def combine_puffs(events):
+    combined_events = []
+    i = 0
+    while i < len(events):
+        timestamp, event_type = events[i]
+        if event_type == PUFF_ON:
+            puff_on = timestamp
+            thermistor_on_val = None
+            puff_off = None
+            thermistor_off_val = None
+
+            j = i + 1
+            # Find PUFF_OFF
+            if j < len(events) and events[j][1] == PUFF_OFF:
+                puff_off = events[j][0]
+                j += 1
+            else:
+            # Cannot form a puff
+                combined_events.append((timestamp, event_type))
+                i += 1
+                continue
+
+            # Find THERMISTOR_ON
+            if j < len(events) and events[j][1] == THERMISTOR_ON:
+                thermistor_on_val = events[j][0]
+                j += 1
+            else:
+            # Incomplete puff
+                combined_events.append((puff_on, PUFF_ON))
+                combined_events.append((puff_off, PUFF_OFF))
+                i = j
+                continue
+
+            # Find THERMISTOR_OFF
+            if j < len(events) and events[j][1] == THERMISTOR_OFF:
+                thermistor_off_val = events[j][0]
+                j += 1
+            else:
+                # Incomplete puff
+                combined_events.append((puff_on, PUFF_ON))
+                combined_events.append((puff_off, PUFF_OFF))
+                combined_events.append((thermistor_on_val, THERMISTOR_ON))
+                i = j
+                continue
+
+            # Attempt to merge subsequent puffs based on thermistor condition
+            merged = True
+            while merged:
+                merged = False
+                if j + 3 < len(events):
+                    n1_ts, n1_type = events[j]
+                    n2_ts, n2_type = events[j+1]
+                    n3_ts, n3_type = events[j+2]
+                    n4_ts, n4_type = events[j+3]
+
+                    if n1_type == PUFF_ON and n2_type == PUFF_OFF and n3_type == THERMISTOR_ON and n4_type == THERMISTOR_OFF:
+                        if (n3_ts - thermistor_off_val) < 0:
+                            # Merge next puff into current
+                            puff_off = n2_ts
+                            thermistor_off_val = n4_ts
+                            j += 4
+                            merged = True
+            
+            # Apply filters
+            puff_duration = puff_off - puff_on
+            temp_diff = thermistor_on_val - thermistor_off_val
+            if (puff_duration > MIN_PUFF_DURATION or temp_diff > MIN_TEMP_DIFF) and (puff_duration <= MAX_PUFF_DURATION):
+                combined_events.append((puff_on, PUFF_ON))
+                combined_events.append((puff_off, PUFF_OFF))
+                combined_events.append((thermistor_on_val, THERMISTOR_ON))
+                combined_events.append((thermistor_off_val, THERMISTOR_OFF))
+
+            i = j
+        else:
+            # Not a PUFF_ON, just copy event
+            combined_events.append((timestamp, event_type))
+            i += 1
+
+    return combined_events
+
+def format_event(timestamp, event_type):
+    return f'{event_type | timestamp:016X}'
+
+
+############################################### Edit Ended ##############################################################
 
 class Application(ttk.Frame):
     #variable to store time duration
@@ -129,7 +235,7 @@ class Application(ttk.Frame):
         self.en_puff = ttk.Entry(
             master=lf_bps,
             width=25)
-        self.en_puff.insert(0, "0.0")
+        self.en_puff.insert(0, "0.2")   # Changed default to 0.2s for noise removal
         self.en_puff.pack(expand=False, side="left")
 
         # Combobox for selecting plot type
@@ -143,9 +249,9 @@ class Application(ttk.Frame):
         # Combobox for selecting puffing display option
         self.cb_plot_puff = ttk.Combobox(
             master=lf_bps,
-            values=["Display all puffing events", "Display puffs that exceed the threshold"],
+            values=["Display all puffing events", "Display puffs that exceed the threshold"],   
             width=35)
-        self.cb_plot_puff.current(0)
+        self.cb_plot_puff.current(1)    # Changed to "Display puffs that exceed the threshold" by default
         self.cb_plot_puff.pack(expand=False, side="left")
 
         # Button to send puffing settings
@@ -216,6 +322,18 @@ class Application(ttk.Frame):
             command=self.send_text_btn_y, # Call send_text_btn_y method on click
             state="disable") # Initially disabled
         self.btn_yes.pack(expand=False, side="left")
+
+############################################### Edit Started ##############################################################
+        # Add a checkbox to enable/disable thermistor logic
+        self.use_thermistor_var = tk.BooleanVar(value=False)
+        self.chk_thermistor = ttk.Checkbutton(
+            master=lf_send,
+            text="Use Thermistor",
+            variable=self.use_thermistor_var
+        )
+        self.chk_thermistor.pack(expand=False, side="left")
+
+############################################### Edit Ended ##############################################################
 
     def _wedget_txrx(self):
         # Create a PanedWindow for TX and RX sections
@@ -452,6 +570,7 @@ class Application(ttk.Frame):
             # Generate file names for converted and duration data files
             file_name2 = _fname.split(".")[0] + "_converted.txt"
             file_name3 = _fname.split(".")[0] + "_duration.txt"
+            processed_file = _fname.split(".")[0]+"_processed.txt" #Added processed data file (extended PO)
 
         # Write data to the file
         with open(_fname, 'w') as f1:
@@ -488,7 +607,37 @@ class Application(ttk.Frame):
         self.btn_sdc.config(state="normal")
         self.btn_save.config(state="disabled")
 
+############################################### Edit Started##############################################################
 
+        use_therm = self.use_thermistor_var.get() # Get the value of the thermistor checkbox
+        if (use_therm):
+            with open(_fname, 'r') as file:
+                lines = file.readlines()
+
+            header_lines = lines[:3]
+            event_lines = lines[3:]
+
+            events = []
+            for line in event_lines:
+                timestamp, event_type = parse_event(line.strip())
+                if timestamp is not None:
+                    events.append((timestamp, event_type))
+
+            # Combine puffs
+            combined_events = combine_puffs(events)
+
+            # Write output file
+            with open(processed_file, 'w') as file:
+                # Write the header lines
+                for line in header_lines:
+                    file.write(line)
+                # Write the combined events
+                for timestamp, event_type in combined_events:
+                    file.write(format_event(timestamp, event_type) + '\n')
+
+            df2 = pd.read_csv(processed_file)
+                    
+############################################### Edit Ended ##############################################################
 
         def add_comma_if_words(string):
             # List of words to replace with word + comma
@@ -1775,6 +1924,50 @@ class Application(ttk.Frame):
         df = pd.read_csv(file_path)
         ##create a new dataframe df2
         df2 = pd.DataFrame(columns=["Timestamps:"])
+
+############################################### Edit Started (b)##############################################################
+
+        dir_name, base_name = os.path.split(file_path)
+    
+        # Split the base filename into name and extension
+        file_root, file_ext = os.path.splitext(base_name)
+        
+        # Create the new processed filename
+        processed_file = f"{file_root}_processed{file_ext}"
+
+        # Create the full path for the processed file
+        processed_file_path = os.path.join(dir_name, processed_file)
+
+        use_therm = self.use_thermistor_var.get() # Get the value of the thermistor checkbox
+        
+        if (use_therm):
+            with open(file_path, 'r') as file:
+                lines = file.readlines()
+
+            header_lines = lines[:3]
+            event_lines = lines[3:]
+
+            events = []
+            for line in event_lines:
+                timestamp, event_type = parse_event(line.strip())
+                if timestamp is not None:
+                    events.append((timestamp, event_type))
+
+            # Combine puffs
+            combined_events = combine_puffs(events)
+
+            # Write output file
+            with open(processed_file_path, 'w') as file:
+                # Write the header lines
+                for line in header_lines:
+                    file.write(line)
+                # Write the combined events
+                for timestamp, event_type in combined_events:
+                    file.write(format_event(timestamp, event_type) + '\n')
+
+            df = pd.read_csv(processed_file_path)
+
+############################################### Edit Ended (b)##############################################################
 
         # Function to convert UTC datetime to local datetime
         def datetime_from_utc_to_local(utc_datetime):
