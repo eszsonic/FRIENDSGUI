@@ -1671,8 +1671,9 @@ class Application(ttk.Frame):
                     root = tk.Tk()
                     root.withdraw()
                     messagebox.showwarning(
-                        "Multiple Timestamps Detected",
-                        "The data was read and saved multiple times in the text file."
+                        "Multiple 'Timestamps:' headers detected",
+                        "This indicates that the same data was recorded and saved more than once in the same file, "
+                        "resulting in duplicated data. Please review the file and remove the redundant data entries."
                     )
                     return None
 
