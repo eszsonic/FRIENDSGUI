@@ -1672,8 +1672,8 @@ class Application(ttk.Frame):
                     root.withdraw()
                     messagebox.showwarning(
                         "Multiple 'Timestamps:' headers detected",
-                        "This indicates that the same data was recorded and saved more than once in the same file, "
-                        "resulting in duplicated data. Please review the file and remove the redundant data entries."
+                        "This indicates that the raw data was saved multiple times in the (input) text file. "
+                        "Please remove unwanted/unnecessary data from the text file"
                     )
                     return None
 
@@ -1795,11 +1795,11 @@ class Application(ttk.Frame):
 
                     msg = "Errors detected in raw data text file.\n\n"
 
-                    msg += "Line number with missing logs:\n"
+                    msg += "Line numbers with missing event pair:\n"
                     msg += ", ".join(map(str, sorted(set(missing_log_lines)))) or "None"
                     msg += "\n\n"
 
-                    msg += "Line number with corrupt timestamps:\n"
+                    msg += "Line numbers with corrupt timestamp:\n"
                     msg += ", ".join(map(str, sorted(set(corrupt_timestamp_lines)))) or "None"
 
                     messagebox.showwarning("Data Errors Detected", msg)
