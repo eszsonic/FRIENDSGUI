@@ -235,7 +235,7 @@ class Application(ttk.Frame):
         self.en_puff = ttk.Entry(
             master=lf_bps,
             width=25)
-        self.en_puff.insert(0, "0.2")   # Changed default to 0.2s for noise removal
+        self.en_puff.insert(0, "0.4")   # Changed default to 4s for noise removal
         self.en_puff.pack(expand=False, side="left")
 
         # Combobox for selecting plot type
@@ -955,8 +955,14 @@ class Application(ttk.Frame):
             df_v2['Duration(ms)'] = df_v2['Duration(ms)'].astype(float).round(1)
             # Drop the 'Duration_in_seconds' column from DataFrame df_v2
             df_v2 = df_v2.drop('Duration_in_seconds', axis=1)
+            # f3.write(df_v2.to_string(index=False) + "\n") # Write the DataFrame df_v2 to file f3
+            # Get puff duration from the entry widget
+            puff_threshold = float(self.en_puff.get()) * 1000 #conert into milisecond
+            # Filter rows where duration > threshold
+            df_v2_filtered = df_v2[df_v2.iloc[:, -1] > puff_threshold]
+            # Write only filtered rows
+            f3.write(df_v2_filtered.to_string(index=False) + "\n") # Write the DataFrame df_v2 to file f3
 
-            f3.write(df_v2.to_string(index=False) + "\n") # Write the DataFrame df_v2 to file f3
 
         df2["Time_round"] = df2['Time'].apply(round_to_nearest_second)
         df2['Time_in_seconds'] = df2['Time_round'].apply(convert_to_seconds)
@@ -2188,10 +2194,8 @@ class Application(ttk.Frame):
             _fname = _fname.split(".")[0]+"_converted.txt"
             file_name3=_fname.split(".")[0]+"_duration.txt"
 
-
         ##Write dataframes into files
         current_time = DT.datetime.now()
-
         with open(_fname, 'w') as f2:
             for i in range(self.lb_rx.size()):
                 ## add internal timestamps into the files to write
@@ -2200,8 +2204,13 @@ class Application(ttk.Frame):
             #f2.write(str(tm2) + "\n")
             f2.write(str("Local Time: " + str(current_time) + "\n"))
             f2.write(df3.to_string(index=False) + "\n")
+
+        # Get puff duration from the entry widget
+        puff_threshold = float(self.en_puff.get()) * 1000 #convert into milisecond
+        # Filter rows where duration > threshold
+        df_v2_filtered = df_v2[df_v2.iloc[:, -1] > puff_threshold]
         with open(file_name3, 'w') as f3:
-            f3.write(df_v2.to_string(index=False) + "\n")
+            f3.write(df_v2_filtered.to_string(index=False) + "\n")
 
 
         df2["Time_round"] = df2['Time'].apply(round_to_nearest_second)
