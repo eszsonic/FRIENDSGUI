@@ -132,6 +132,244 @@ def format_event(timestamp, event_type):
 ############################################### Edit Ended ##############################################################
 
 class Application(ttk.Frame):
+    def process_file(self, file_path):
+        """
+        Read a raw text file, keep the LAST occurrence of "Timestamps:" and process
+        everything after it, then write a cleaned version to a new file with '_temp'
+        appended before the extension.
+
+        Cleaning rules:
+        1) Keep the last "Timestamps:" line as the first line in the output.
+        2) For lines after that header:
+           - strip leading spaces
+           - remove empty lines
+           - remove lines with fewer than 16 characters
+        3) Pair validation:
+           - 1 must be followed by 2
+           - 2 must be preceded by 1
+           - 3 must be followed by 4
+           - 4 must be preceded by 3
+           - 5 must be followed by 6
+           - 6 must be preceded by 5
+        4) If a valid 1->2 or 3->4 pair is NOT followed by a valid 5->6 pair
+           within its block, drop that pair.
+        5) After a valid 5->6 pair, suppress additional 5/6 lines until a new block
+           starts with 1, 2, 3, 4, E, or F.
+
+        Returns:
+            str | None: path to the cleaned file, or None on failure.
+        """
+
+        def starts_with(text, ch):
+            return bool(text) and text[0] == ch
+
+        def has_adjacent_56_pair(items, start_idx, end_idx):
+            for k in range(start_idx, max(start_idx, end_idx - 1)):
+                if starts_with(items[k][1], "5") and starts_with(items[k + 1][1], "6"):
+                    return True
+            return False
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                lines = file.readlines()
+
+            timestamp_indices = [
+                i for i, line in enumerate(lines)
+                if line.lstrip().startswith("Timestamps:")
+            ]
+
+            if not timestamp_indices:
+                messagebox.showwarning(
+                    "Missing 'Timestamps:' header",
+                    "The selected file does not contain a 'Timestamps:' header.",
+                    parent=self.master
+                )
+                return None
+
+            if len(timestamp_indices) > 1:
+                messagebox.showwarning(
+                    "Multiple 'Timestamps:' headers detected",
+                    "The raw data appears to have been saved multiple times in the input file.\n"
+                    "The last 'Timestamps:' section will be used for processing.",
+                    parent=self.master
+                )
+
+            last_index = timestamp_indices[-1]
+            ts_line = lines[last_index].rstrip("\n").lstrip()
+            after_ts = list(enumerate(lines[last_index + 1:], start=last_index + 2))
+
+            corrupt_timestamp_lines = []
+            missing_log_lines = []
+
+            cleaned = []
+            for line_num, line in after_ts:
+                line = line.lstrip().rstrip("\n")
+
+                if not line:
+                    continue
+
+                if len(line) < 16:
+                    corrupt_timestamp_lines.append(line_num)
+                    continue
+
+                cleaned.append((line_num, line))
+
+            keep = [True] * len(cleaned)
+
+            for i, (line_num, line) in enumerate(cleaned):
+                if starts_with(line, "1"):
+                    if i + 1 >= len(cleaned) or not starts_with(cleaned[i + 1][1], "2"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+                elif starts_with(line, "2"):
+                    if i - 1 < 0 or not starts_with(cleaned[i - 1][1], "1"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+                elif starts_with(line, "3"):
+                    if i + 1 >= len(cleaned) or not starts_with(cleaned[i + 1][1], "4"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+                elif starts_with(line, "4"):
+                    if i - 1 < 0 or not starts_with(cleaned[i - 1][1], "3"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+                elif starts_with(line, "5"):
+                    if i + 1 >= len(cleaned) or not starts_with(cleaned[i + 1][1], "6"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+                elif starts_with(line, "6"):
+                    if i - 1 < 0 or not starts_with(cleaned[i - 1][1], "5"):
+                        keep[i] = False
+                        missing_log_lines.append(line_num)
+
+            cleaned2 = [item for item, k in zip(cleaned, keep) if k]
+
+            reset_starts = {"1", "2", "3", "4", "E", "F"}
+            drop = [False] * len(cleaned2)
+
+            i = 0
+            while i < len(cleaned2) - 1:
+                current_line = cleaned2[i][1]
+                next_line = cleaned2[i + 1][1]
+
+                if starts_with(current_line, "1") and starts_with(next_line, "2"):
+                    j = i + 2
+                    end = len(cleaned2)
+
+                    for k in range(j, len(cleaned2)):
+                        if cleaned2[k][1] and cleaned2[k][1][0] in reset_starts:
+                            end = k
+                            break
+
+                    if not has_adjacent_56_pair(cleaned2, j, end):
+                        drop[i] = True
+                        drop[i + 1] = True
+
+                    i += 2
+                    continue
+
+                if starts_with(current_line, "3") and starts_with(next_line, "4"):
+                    j = i + 2
+                    end = len(cleaned2)
+
+                    for k in range(j, len(cleaned2)):
+                        if cleaned2[k][1] and cleaned2[k][1][0] in reset_starts:
+                            end = k
+                            break
+
+                    if not has_adjacent_56_pair(cleaned2, j, end):
+                        drop[i] = True
+                        drop[i + 1] = True
+
+                    i += 2
+                    continue
+
+                i += 1
+
+            cleaned3 = [item for idx, item in enumerate(cleaned2) if not drop[idx]]
+
+            out_data = []
+            suppress_56 = False
+            suppress_after_next = False
+
+            i = 0
+            while i < len(cleaned3):
+                _, line = cleaned3[i]
+                first = line[0] if line else ""
+
+                if first in reset_starts:
+                    suppress_56 = False
+                    suppress_after_next = False
+
+                if suppress_56 and first in {"5", "6"}:
+                    i += 1
+                    continue
+
+                out_data.append(line)
+
+                if first == "5" and (i + 1) < len(cleaned3) and starts_with(cleaned3[i + 1][1], "6"):
+                    suppress_after_next = True
+
+                if suppress_after_next and first == "6":
+                    suppress_56 = True
+                    suppress_after_next = False
+
+                i += 1
+
+            base_name, ext = os.path.splitext(file_path)
+            new_file_path = f"{base_name}_temp{ext}"
+
+            with open(new_file_path, "w", encoding="utf-8") as file:
+                file.write(ts_line + "\n")
+                file.writelines(f"{line}\n" for line in out_data)
+
+            print(f"File has been processed and saved as: {new_file_path}")
+
+            if missing_log_lines or corrupt_timestamp_lines:
+                msg = "Errors detected in raw data text file.\n\n"
+
+                msg += "Line numbers with missing event pair:\n"
+                msg += (
+                    ", ".join(map(str, sorted(set(missing_log_lines))))
+                    if missing_log_lines else "None"
+                )
+
+                msg += "\n\nLine numbers with corrupt timestamp:\n"
+                msg += (
+                    ", ".join(map(str, sorted(set(corrupt_timestamp_lines))))
+                    if corrupt_timestamp_lines else "None"
+                )
+
+                messagebox.showwarning(
+                    "Data Errors Detected",
+                    msg,
+                    parent=self.master
+                )
+
+            return new_file_path
+
+        except FileNotFoundError:
+            messagebox.showerror(
+                "File Not Found",
+                f"The file could not be found:\n{file_path}",
+                parent=self.master
+            )
+            print(f"Error: The file at '{file_path}' was not found.")
+            return None
+
+        except Exception as e:
+            messagebox.showerror(
+                "Processing Error",
+                f"An error occurred while processing the file:\n{e}",
+                parent=self.master
+            )
+            print(f"An error occurred while processing '{file_path}': {e}")
+            return None
     #variable to store time duration
     time_duration = 0
     def __init__(self, master=None):
@@ -564,6 +802,9 @@ class Application(ttk.Frame):
             initialdir="/",
             title="Save as",
             filetypes=[("text file", "*.txt"), ("all files", "*.*")])
+        if not _fname:
+            self.read_status.config(text="Ready", background="lightgray")
+            return
 
         if _fname:
             _fname += ".txt" # Append .txt extension to the file name
@@ -1785,68 +2026,6 @@ class Application(ttk.Frame):
 
             return df.drop(to_drop).reset_index(drop=True)
 
-        def process_file(file_path):
-            """
-            Reads a text file, removes all lines before the last occurrence of "Timestamps:",
-            and saves the result in a new file with '_temp' appended to the original name.
-
-            If multiple occurrences of "Timestamps:" are found, it alerts the user via a pop-up message
-            and stops execution. Otherwise, it proceeds to clean the file.
-
-            Args:
-                file_path (str): Path to the input text file.
-
-            Returns:
-                str or None: Path to the new file if processing is successful, else None.
-            """
-            try:
-                # Read the file content
-                with open(file_path, "r", encoding="utf-8") as file:
-                    lines = file.readlines()
-
-                # Find all occurrences of "Timestamps:"
-                timestamp_indices = [i for i, line in enumerate(lines) if "Timestamps:" in line]
-
-                if not timestamp_indices:
-                    print("Error: 'Timestamps:' not found in the file.")
-                    return None
-
-                if len(timestamp_indices) > 1:
-                    # Create a pop-up alert for multiple "Timestamps:" occurrences
-                    root = tk.Tk()
-                    root.withdraw()  # Hide the main Tkinter window
-                    messagebox.showwarning(
-                        "Multiple Timestamps Detected",
-                        "The data was read and saved multiple times in the text file.\n"
-                        "Please remove unwanted/unnecessary data from the text file and read it again."
-                    )
-                    print("Execution stopped due to multiple 'Timestamps:' occurrences.")
-                    return None  # Stop execution and ask the user to clean the file
-
-                # If only one "Timestamps:" is found, proceed with cleaning
-                last_index = timestamp_indices[-1]
-                filtered_lines = lines[last_index:]
-
-                # Construct new file name with "_temp"
-                base_name, ext = os.path.splitext(file_path)
-                new_file_path = f"{base_name}_temp{ext}"
-
-                # Write back the filtered content to the new file
-                with open(new_file_path, "w", encoding="utf-8") as file:
-                    file.writelines(filtered_lines)
-
-                print(f"File has been processed and saved as: {new_file_path}")
-
-                # Update file_path variable
-                return new_file_path
-
-            except FileNotFoundError:
-                print(f"Error: The file at '{file_path}' was not found.")
-                return None
-            except Exception as e:
-                print(f"An error occurred: {e}")
-                return None
-
         # def check_for_e_in_column(df_column, input_integer):
         #     # Iterate through each row in the specified DataFrame column
         #     for index, value in df_column.iteritems():
@@ -1920,12 +2099,17 @@ class Application(ttk.Frame):
         #ask for a text file with original timestamps
         file_path = filedialog.askopenfilename(filetypes=[('Text Files', '*.txt')])
 
+        if not file_path:
+            self.read_status.config(text="File selection cancelled", background="lightgray")
+            return
         # remove any line starts with "Input Command"
         # remove_lines_from_file(file_path)
 
         # Remove all the lines before "timestamp:" and rename file_path variable to originalName_temp
-        file_path = process_file(file_path)
-
+        file_path = self.process_file(file_path)
+        if not file_path:
+            self.read_status.config(text="File processing failed", background="lightgray")
+            return
         ## convert the file into a dataframe
         df = pd.read_csv(file_path)
         ##create a new dataframe df2
@@ -2189,6 +2373,9 @@ class Application(ttk.Frame):
             initialdir="/",
             title="Save as",
             filetypes=[("text file", "*.txt"), ("all files", "*.*")])
+        if not _fname:
+            self.read_status.config(text="Ready", background="lightgray")
+            return
         ##add postfixes with the file name
         if _fname:
             _fname = _fname.split(".")[0]+"_converted.txt"
