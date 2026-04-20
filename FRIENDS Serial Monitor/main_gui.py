@@ -473,7 +473,7 @@ class Application(ttk.Frame):
         self.en_puff = ttk.Entry(
             master=lf_bps,
             width=25)
-        self.en_puff.insert(0, "0.4")   # Changed default to 4s for noise removal
+        self.en_puff.insert(0, "0.4")   # Changed default to 0.4s for noise removal
         self.en_puff.pack(expand=False, side="left")
 
         # Combobox for selecting plot type
