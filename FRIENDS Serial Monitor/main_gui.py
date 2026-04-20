@@ -354,10 +354,20 @@ class Application(ttk.Frame):
             return new_file_path
 
         except FileNotFoundError:
+            messagebox.showerror(
+                "File Not Found",
+                f"The file could not be found:\n{file_path}",
+                parent=self.master
+            )
             print(f"Error: The file at '{file_path}' was not found.")
             return None
 
         except Exception as e:
+            messagebox.showerror(
+                "Processing Error",
+                f"An error occurred while processing the file:\n{e}",
+                parent=self.master
+            )
             print(f"An error occurred while processing '{file_path}': {e}")
             return None
     #variable to store time duration
@@ -2083,12 +2093,17 @@ class Application(ttk.Frame):
         #ask for a text file with original timestamps
         file_path = filedialog.askopenfilename(filetypes=[('Text Files', '*.txt')])
 
+        if not file_path:
+            self.read_status.config(text="File selection cancelled", background="lightgray")
+            return
         # remove any line starts with "Input Command"
         # remove_lines_from_file(file_path)
 
         # Remove all the lines before "timestamp:" and rename file_path variable to originalName_temp
         file_path = self.process_file(file_path)
-
+        if not file_path:
+            self.read_status.config(text="File processing failed", background="lightgray")
+            return
         ## convert the file into a dataframe
         df = pd.read_csv(file_path)
         ##create a new dataframe df2
