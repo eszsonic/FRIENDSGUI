@@ -1199,8 +1199,10 @@ class Application(ttk.Frame):
             # f3.write(df_v2.to_string(index=False) + "\n") # Write the DataFrame df_v2 to file f3
             # Get puff duration from the entry widget
             puff_threshold = float(self.en_puff.get()) * 1000 #conert into milisecond
-            # Filter rows where duration > threshold
-            df_v2_filtered = df_v2[df_v2.iloc[:, -1] > puff_threshold]
+            # Filter only PUFF rows where the duration exceeds the configured puff threshold
+            df_v2_filtered = df_v2[
+                (df_v2['Event'] == "PUFF") & (df_v2['Duration(ms)'] > puff_threshold)
+            ]
             # Write only filtered rows
             f3.write(df_v2_filtered.to_string(index=False) + "\n") # Write the DataFrame df_v2 to file f3
 
