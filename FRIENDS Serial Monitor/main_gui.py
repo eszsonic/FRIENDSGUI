@@ -2395,9 +2395,22 @@ class Application(ttk.Frame):
             f2.write(df3.to_string(index=False) + "\n")
 
         # Get puff duration from the entry widget
-        puff_threshold = float(self.en_puff.get()) * 1000 #convert into milisecond
-        # Filter rows where duration > threshold
-        df_v2_filtered = df_v2[df_v2.iloc[:, -1] > puff_threshold]
+        puff_threshold_text = self.en_puff.get().strip()
+        try:
+            puff_threshold = float(puff_threshold_text) * 1000 #convert into milisecond
+        except ValueError:
+            messagebox.showerror("Invalid puff duration", "Please enter a valid numeric puff duration threshold.")
+            self.read_status.config(text="Ready", background="lightgray")
+            return
+
+        required_columns = {"Event", "Duration(ms)"}
+        if not required_columns.issubset(df_v2.columns):
+            messagebox.showerror("Missing columns", 'Duration export requires "Event" and "Duration(ms)" columns.')
+            self.read_status.config(text="Ready", background="lightgray")
+            return
+
+        # Filter PUFF rows where duration > threshold
+        df_v2_filtered = df_v2[(df_v2["Event"] == "PUFF") & (df_v2["Duration(ms)"] > puff_threshold)]
         with open(file_name3, 'w') as f3:
             f3.write(df_v2_filtered.to_string(index=False) + "\n")
 
