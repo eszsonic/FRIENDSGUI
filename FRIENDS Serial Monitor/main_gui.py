@@ -2402,7 +2402,7 @@ class Application(ttk.Frame):
         # Get puff duration from the entry widget
         puff_threshold_text = self.en_puff.get().strip()
         try:
-            puff_threshold = float(puff_threshold_text) * 1000 #convert into milisecond
+            puff_threshold = float(puff_threshold_text) * 1000  # convert to milliseconds
         except ValueError:
             messagebox.showerror("Invalid puff duration", "Please enter a valid numeric puff duration threshold.")
             self.read_status.config(text="Ready", background="lightgray")
